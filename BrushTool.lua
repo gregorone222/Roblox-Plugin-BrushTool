@@ -55,8 +55,6 @@ local snapToGridEnabled = false
 local gridSize = 4
 local maskingMode = "Off"
 local maskingValue = nil
-local physicsModeEnabled = false
-local physicsSettleTime = 1.5
 local smartSnapEnabled = false
 local currentAssetGroup = "Default"
 local isGroupListView = false
@@ -85,7 +83,6 @@ local paintAt
 local scaleModel
 local randomizeProperties
 local findSurfacePositionAndNormal
-local anchorPhysicsGroup
 local paintInVolume
 local stampAt
 local eraseAt
@@ -607,12 +604,30 @@ C.randomizeBtn[1].Size = UDim2.new(1, 0, 0, 32)
 
 createSectionHeader("ENVIRONMENT CONTROL", TabTuning.frame)
 C.smartSnapBtn = {createTechToggle("Smart Surface Snap", TabTuning.frame)}
-C.physicsModeBtn = {createTechToggle("Physics Placement", TabTuning.frame)}
-C.physicsSettleTimeBox = {createTechInput("PHYSICS TIME (s)", "1.5", TabTuning.frame)}
 C.snapToGridBtn = {createTechToggle("Snap to Grid", TabTuning.frame)}
 C.gridSizeBox = {createTechInput("GRID SIZE", "4", TabTuning.frame)}
-C.surfaceAngleBtn = {createTechToggle("Surface Lock: OFF", TabTuning.frame)}
 C.ghostTransparencyBox = {createTechInput("GHOST TRANS", "0.65", TabTuning.frame)}
+
+createSectionHeader("SURFACE LOCK", TabTuning.frame)
+local surfaceGrid = Instance.new("Frame")
+surfaceGrid.Size = UDim2.new(1, 0, 0, 80)
+surfaceGrid.BackgroundTransparency = 1
+surfaceGrid.Parent = TabTuning.frame
+local slLayout = Instance.new("UIGridLayout")
+slLayout.CellSize = UDim2.new(0.48, 0, 0, 32)
+slLayout.CellPadding = UDim2.new(0.04, 0, 0, 8)
+slLayout.Parent = surfaceGrid
+
+C.surfaceButtons = {}
+local surfaceModes = {"Off", "Floor", "Wall", "Ceiling"}
+for _, m in ipairs(surfaceModes) do
+	local b, s = createTechButton(string.upper(m), surfaceGrid)
+	C.surfaceButtons[m] = {Button = b, Stroke = s}
+	b.MouseButton1Click:Connect(function()
+		surfaceAngleMode = m
+		updateAllToggles()
+	end)
+end
 
 createSectionHeader("MASKING & FILTERS", TabTuning.frame)
 C.maskingModeBtn = {createTechButton("MASK: OFF", TabTuning.frame)}
@@ -809,25 +824,11 @@ findSurfacePositionAndNormal = function()
 	local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * 2000, params)
 	if result then
 		if surfaceAngleMode == "Floor" and result.Normal.Y < 0.7 then return nil, nil, nil
-		elseif surfaceAngleMode == "Wall" and math.abs(result.Normal.Y) > 0.3 then return nil, nil, nil end
+		elseif surfaceAngleMode == "Wall" and math.abs(result.Normal.Y) > 0.3 then return nil, nil, nil
+		elseif surfaceAngleMode == "Ceiling" and result.Normal.Y > -0.7 then return nil, nil, nil end
 		return result.Position, result.Normal, result.Instance
 	end
 	return nil, nil, nil
-end
-
-
-anchorPhysicsGroup = function(group, parentFolder)
-	task.spawn(function()
-		task.wait(physicsSettleTime)
-		for _, model in ipairs(group) do
-			if model and model.Parent then
-				model.Parent = parentFolder
-				for _, desc in ipairs(model:GetDescendants()) do
-					if desc:IsA("BasePart") then desc.Anchored = true end
-				end
-			end
-		end
-	end)
 end
 
 -- Helper to calculate asset transform (used by placeAsset and ghost preview)
@@ -847,6 +848,8 @@ local function applyAssetTransform(asset, position, normal, overrideScale, overr
 		local xrot, yrot, zrot
 		if normal and surfaceAngleMode == "Floor" then
 			xrot = 0; zrot = 0; yrot = math.rad(math.random() * 360); effectiveNormal = Vector3.new(0, 1, 0)
+		elseif normal and surfaceAngleMode == "Ceiling" then
+			xrot = math.pi; zrot = 0; yrot = math.rad(math.random() * 360); effectiveNormal = Vector3.new(0, -1, 0)
 		else
 			local rotXMin = math.rad(parseNumber(C.rotXMinBox[1].Text, 0))
 			local rotXMax = math.rad(parseNumber(C.rotXMaxBox[1].Text, 0))
@@ -973,13 +976,6 @@ placeAsset = function(assetToClone, position, normal, overrideScale, overrideRot
 
 	applyAssetTransform(clone, position, normal, overrideScale, overrideRotation)
 
-	if physicsModeEnabled and currentMode == "Paint" then
-		clone.Parent = getWorkspaceContainer()
-		for _, desc in ipairs(clone:GetDescendants()) do
-			if desc:IsA("BasePart") then desc.Anchored = false; desc.CanCollide = true end
-		end
-		clone:TranslateBy(Vector3.new(0, 2, 0))
-	end
 	return clone
 end
 
@@ -1013,7 +1009,6 @@ paintAt = function(center, surfaceNormal)
 	local right = look:Cross(up).Unit
 	local look_actual = up:Cross(right).Unit
 	local planeCFrame = CFrame.fromMatrix(center, right, up, -look_actual)
-	local physicsGroup = {}
 
 	for i = 1, density do
 		local assetToClone = getRandomWeightedAsset(activeAssets)
@@ -1045,11 +1040,10 @@ paintAt = function(center, surfaceNormal)
 		end
 		if candidatePos then
 			local placedAsset = placeAsset(assetToClone, candidatePos, candidateNormal)
-			if not physicsModeEnabled or currentMode ~= "Paint" then placedAsset.Parent = groupFolder else table.insert(physicsGroup, placedAsset) end
+			if placedAsset then placedAsset.Parent = groupFolder end
 			table.insert(placed, candidatePos)
 		end
 	end
-	if physicsModeEnabled and currentMode == "Paint" and #physicsGroup > 0 then anchorPhysicsGroup(physicsGroup, groupFolder) end
 	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
 	ChangeHistoryService:SetWaypoint("Brush - After Paint")
 end
@@ -1382,6 +1376,8 @@ updateGhostPreview = function(position, normal)
 		local zrot = randFloat(rotZMin, rotZMax)
 		if surfaceAngleMode == "Floor" and normal then
 			xrot = 0; zrot = 0
+		elseif surfaceAngleMode == "Ceiling" and normal then
+			xrot = math.pi; zrot = 0
 		end
 		nextStampRotation = CFrame.Angles(xrot, yrot, zrot)
 	end
@@ -1529,7 +1525,8 @@ local function paintAlongLine(startPos, endPos)
 		if result then
 			local skip = false
 			if surfaceAngleMode == "Floor" and result.Normal.Y < 0.7 then skip = true
-			elseif surfaceAngleMode == "Wall" and math.abs(result.Normal.Y) > 0.3 then skip = true end
+			elseif surfaceAngleMode == "Wall" and math.abs(result.Normal.Y) > 0.3 then skip = true
+			elseif surfaceAngleMode == "Ceiling" and result.Normal.Y > -0.7 then skip = true end
 
 			if not skip then
 				local assetToPlace = getRandomWeightedAsset(activeAssets)
@@ -1608,13 +1605,21 @@ updateAllToggles = function()
 	updateToggle(C.assetSettingsActive[1], C.assetSettingsActive[2], C.assetSettingsActive[3], activeState)
 
 	updateToggle(C.smartSnapBtn[1], C.smartSnapBtn[2], C.smartSnapBtn[3], smartSnapEnabled)
-	updateToggle(C.physicsModeBtn[1], C.physicsModeBtn[2], C.physicsModeBtn[3], physicsModeEnabled)
 	updateToggle(C.snapToGridBtn[1], C.snapToGridBtn[2], C.snapToGridBtn[3], snapToGridEnabled)
 
-	local saText = "Surface Lock: OFF"
-	if surfaceAngleMode == "Floor" then saText = "Surface Lock: FLOOR"
-	elseif surfaceAngleMode == "Wall" then saText = "Surface Lock: WALL" end
-	updateToggle(C.surfaceAngleBtn[1], C.surfaceAngleBtn[2], C.surfaceAngleBtn[3], surfaceAngleMode ~= "Off", saText, saText)
+	for mode, controls in pairs(C.surfaceButtons) do
+		if mode == surfaceAngleMode then
+			controls.Stroke.Color = Theme.Accent
+			controls.Button.TextColor3 = Theme.Background
+			controls.Button.BackgroundColor3 = Theme.Accent
+			controls.Stroke.Thickness = 2
+		else
+			controls.Stroke.Color = Theme.Border
+			controls.Button.TextColor3 = Theme.Text
+			controls.Button.BackgroundColor3 = Theme.Panel
+			controls.Stroke.Thickness = 1
+		end
+	end
 end
 
 updateMaskingUI = function()
@@ -2089,16 +2094,8 @@ C.pathFollowPathBtn[1].MouseButton1Click:Connect(function() pathFollowPath = not
 C.pathCloseLoopBtn[1].MouseButton1Click:Connect(function() pathCloseLoop = not pathCloseLoop; updateAllToggles(); updatePathPreview() end)
 
 C.smartSnapBtn[1].MouseButton1Click:Connect(function() smartSnapEnabled = not smartSnapEnabled; updateAllToggles() end)
-C.physicsModeBtn[1].MouseButton1Click:Connect(function() physicsModeEnabled = not physicsModeEnabled; updateAllToggles() end)
 C.snapToGridBtn[1].MouseButton1Click:Connect(function() snapToGridEnabled = not snapToGridEnabled; updateAllToggles() end)
-C.surfaceAngleBtn[1].MouseButton1Click:Connect(function()
-	if surfaceAngleMode == "Off" then surfaceAngleMode = "Floor"
-	elseif surfaceAngleMode == "Floor" then surfaceAngleMode = "Wall"
-	else surfaceAngleMode = "Off" end
-	updateAllToggles()
-end)
 
-C.physicsSettleTimeBox[1].FocusLost:Connect(function() physicsSettleTime = parseNumber(C.physicsSettleTimeBox[1].Text, 1.5) end)
 C.gridSizeBox[1].FocusLost:Connect(function() gridSize = parseNumber(C.gridSizeBox[1].Text, 4) end)
 C.ghostTransparencyBox[1].FocusLost:Connect(function() 
 	ghostTransparency = math.clamp(parseNumber(C.ghostTransparencyBox[1].Text, 0.65), 0, 1) 
