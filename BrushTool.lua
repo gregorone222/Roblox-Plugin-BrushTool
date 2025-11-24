@@ -53,8 +53,6 @@ local previewFolder = nil
 local surfaceAngleMode = "Off"
 local snapToGridEnabled = false
 local gridSize = 4
-local autoTerrainPaint = false
-local terrainUndoStack = {}
 local maskingMode = "Off"
 local maskingValue = nil
 local physicsModeEnabled = false
@@ -87,7 +85,6 @@ local paintAt
 local scaleModel
 local randomizeProperties
 local findSurfacePositionAndNormal
-local paintTerrainUnderAsset
 local anchorPhysicsGroup
 local paintInVolume
 local stampAt
@@ -628,7 +625,6 @@ C.maskingTargetLabel.Font = Theme.FontTech
 C.maskingTargetLabel.TextColor3 = Theme.Accent
 C.maskingTargetLabel.TextSize = 12
 C.maskingTargetLabel.Parent = TabTuning.frame
-C.autoTerrainPaintBtn = {createTechToggle("Auto-Paint Terrain", TabTuning.frame)}
 
 -- Switch Tab
 switchTab("Tools")
@@ -819,26 +815,6 @@ findSurfacePositionAndNormal = function()
 	return nil, nil, nil
 end
 
-paintTerrainUnderAsset = function(asset, materialName)
-	local material = Enum.Material[materialName]
-	if not material then return end
-	local size, position
-	if asset:IsA("Model") and asset.PrimaryPart then
-		size = asset:GetExtentsSize()
-		position = asset.PrimaryPart.Position
-	elseif asset:IsA("BasePart") then
-		size = asset.Size
-		position = asset.Position
-	else return end
-	local paintRadius = math.max(size.X, size.Z) / 2 + 2
-	local paintPosition = position
-	local regionMin = Vector3.new(paintPosition.X - paintRadius, -50, paintPosition.Z - paintRadius)
-	local regionMax = Vector3.new(paintPosition.X + paintRadius, 50, paintPosition.Z + paintRadius)
-	local region = Region3.new(regionMin, regionMax):ExpandToGrid(4)
-	local terrainData = workspace.Terrain:CopyRegion(region)
-	table.insert(terrainUndoStack, { Region = region, Data = terrainData })
-	workspace.Terrain:FillBall(CFrame.new(paintPosition), paintRadius, material)
-end
 
 anchorPhysicsGroup = function(group, parentFolder)
 	task.spawn(function()
@@ -1003,10 +979,6 @@ placeAsset = function(assetToClone, position, normal, overrideScale, overrideRot
 			if desc:IsA("BasePart") then desc.Anchored = false; desc.CanCollide = true end
 		end
 		clone:TranslateBy(Vector3.new(0, 2, 0))
-	end
-	if autoTerrainPaint then
-		local terrainMaterial = assetOffsets[assetToClone.Name .. "_terrainMaterial"]
-		if terrainMaterial then paintTerrainUnderAsset(clone, terrainMaterial) end
 	end
 	return clone
 end
@@ -1638,7 +1610,6 @@ updateAllToggles = function()
 	updateToggle(C.smartSnapBtn[1], C.smartSnapBtn[2], C.smartSnapBtn[3], smartSnapEnabled)
 	updateToggle(C.physicsModeBtn[1], C.physicsModeBtn[2], C.physicsModeBtn[3], physicsModeEnabled)
 	updateToggle(C.snapToGridBtn[1], C.snapToGridBtn[2], C.snapToGridBtn[3], snapToGridEnabled)
-	updateToggle(C.autoTerrainPaintBtn[1], C.autoTerrainPaintBtn[2], C.autoTerrainPaintBtn[3], autoTerrainPaint)
 
 	local saText = "Surface Lock: OFF"
 	if surfaceAngleMode == "Floor" then saText = "Surface Lock: FLOOR"
@@ -2120,7 +2091,6 @@ C.pathCloseLoopBtn[1].MouseButton1Click:Connect(function() pathCloseLoop = not p
 C.smartSnapBtn[1].MouseButton1Click:Connect(function() smartSnapEnabled = not smartSnapEnabled; updateAllToggles() end)
 C.physicsModeBtn[1].MouseButton1Click:Connect(function() physicsModeEnabled = not physicsModeEnabled; updateAllToggles() end)
 C.snapToGridBtn[1].MouseButton1Click:Connect(function() snapToGridEnabled = not snapToGridEnabled; updateAllToggles() end)
-C.autoTerrainPaintBtn[1].MouseButton1Click:Connect(function() autoTerrainPaint = not autoTerrainPaint; updateAllToggles() end)
 C.surfaceAngleBtn[1].MouseButton1Click:Connect(function()
 	if surfaceAngleMode == "Off" then surfaceAngleMode = "Floor"
 	elseif surfaceAngleMode == "Floor" then surfaceAngleMode = "Wall"
