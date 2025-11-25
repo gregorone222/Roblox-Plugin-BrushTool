@@ -53,8 +53,6 @@ local previewFolder = nil
 local surfaceAngleMode = "Off"
 local snapToGridEnabled = false
 local gridSize = 4
-local maskingMode = "Off"
-local maskingValue = nil
 local smartSnapEnabled = false
 local currentAssetGroup = "Default"
 local isGroupListView = false
@@ -97,7 +95,6 @@ local updateModeButtonsUI
 local updateAllToggles
 local addSelectedAssets
 local clearAssetList
-local updateMaskingUI
 local randomPointInCircle
 local updateGroupUI
 local migrateAssetsToGroup
@@ -629,17 +626,6 @@ for _, m in ipairs(surfaceModes) do
 	end)
 end
 
-createSectionHeader("MASKING & FILTERS", TabTuning.frame)
-C.maskingModeBtn = {createTechButton("MASK: OFF", TabTuning.frame)}
-C.pickMaskTargetBtn = {createTechButton("PICK FROM SELECTION", TabTuning.frame)}
-C.maskingTargetLabel = Instance.new("TextLabel")
-C.maskingTargetLabel.Size = UDim2.new(1, 0, 0, 20)
-C.maskingTargetLabel.BackgroundTransparency = 1
-C.maskingTargetLabel.Text = "TARGET: NONE"
-C.maskingTargetLabel.Font = Theme.FontTech
-C.maskingTargetLabel.TextColor3 = Theme.Accent
-C.maskingTargetLabel.TextSize = 12
-C.maskingTargetLabel.Parent = TabTuning.frame
 
 -- Switch Tab
 switchTab("Tools")
@@ -1023,19 +1009,10 @@ paintAt = function(center, surfaceNormal)
 			params.FilterDescendantsInstances = { previewFolder, container }; params.FilterType = Enum.RaycastFilterType.Exclude
 			local result = workspace:Raycast(rayOrigin, rayDir, params)
 			if result and result.Instance then
-				local isValidTarget = true
-				if maskingMode ~= "Off" and maskingValue then
-					local targetPart = result.Instance
-					if maskingMode == "Material" then isValidTarget = (targetPart.Material == maskingValue)
-					elseif maskingMode == "Color" then isValidTarget = (targetPart.Color == maskingValue)
-					elseif maskingMode == "Tag" then isValidTarget = CollectionService:HasTag(targetPart, maskingValue) end
-				end
-				if isValidTarget then
-					local posOnSurface = result.Position
-					local ok = true
-					for _, p in ipairs(placed) do if (p - posOnSurface).Magnitude < spacing then ok = false; break end end
-					if ok then found = true; candidatePos = posOnSurface; candidateNormal = result.Normal end
-				end
+				local posOnSurface = result.Position
+				local ok = true
+				for _, p in ipairs(placed) do if (p - posOnSurface).Magnitude < spacing then ok = false; break end end
+				if ok then found = true; candidatePos = posOnSurface; candidateNormal = result.Normal end
 			end
 		end
 		if candidatePos then
@@ -1622,28 +1599,6 @@ updateAllToggles = function()
 	end
 end
 
-updateMaskingUI = function()
-	C.maskingModeBtn[1].Text = "MASK: " .. string.upper(maskingMode)
-	if maskingMode == "Off" then
-		C.maskingTargetLabel.Text = "TARGET: NONE"
-		C.maskingTargetLabel.TextColor3 = Theme.TextDim
-		C.pickMaskTargetBtn[1].Visible = false
-	else
-		C.pickMaskTargetBtn[1].Visible = true
-		if maskingValue then
-			C.maskingTargetLabel.TextColor3 = Theme.Success
-			if maskingMode == "Material" then C.maskingTargetLabel.Text = "TARGET: " .. maskingValue.Name
-			elseif maskingMode == "Tag" then C.maskingTargetLabel.Text = "TARGET: " .. tostring(maskingValue)
-			elseif maskingMode == "Color" then
-				local c = maskingValue
-				C.maskingTargetLabel.Text = string.format("TARGET: %.2f, %.2f, %.2f", c.r, c.g, c.b)
-			end
-		else
-			C.maskingTargetLabel.Text = "TARGET: NONE"
-			C.maskingTargetLabel.TextColor3 = Theme.Warning
-		end
-	end
-end
 
 addSelectedAssets = function()
 	local selection = Selection:Get()
@@ -2037,27 +1992,7 @@ C.clearBtn[1].MouseButton1Click:Connect(function()
 	end
 end)
 
-C.maskingModeBtn[1].MouseButton1Click:Connect(function()
-	if maskingMode == "Off" then maskingMode = "Material"
-	elseif maskingMode == "Material" then maskingMode = "Color"
-	elseif maskingMode == "Color" then maskingMode = "Tag"
-	else maskingMode = "Off" end
-	maskingValue = nil
-	updateMaskingUI()
-end)
 
-C.pickMaskTargetBtn[1].MouseButton1Click:Connect(function()
-	local sel = Selection:Get()
-	if #sel > 0 and sel[1]:IsA("BasePart") then
-		if maskingMode == "Material" then maskingValue = sel[1].Material
-		elseif maskingMode == "Color" then maskingValue = sel[1].Color
-		elseif maskingMode == "Tag" then
-			local t = CollectionService:GetTags(sel[1])
-			if #t > 0 then maskingValue = t[1] end
-		end
-		updateMaskingUI()
-	end
-end)
 
 -- Input Connections (Persistence)
 C.assetSettingsOffsetY[1].FocusLost:Connect(function()
@@ -2216,7 +2151,6 @@ updateAssetUIList()
 updateGroupUI()
 updateModeButtonsUI()
 updateAllToggles()
-updateMaskingUI()
 
 -- Cleanup
 plugin.Unloading:Connect(function()
