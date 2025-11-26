@@ -470,23 +470,17 @@ local groupActions = Instance.new("Frame")
 groupActions.Size = UDim2.new(1, 0, 0, 32)
 groupActions.BackgroundTransparency = 1
 groupActions.Parent = TabAssets.frame
-groupActions.ZIndex = 10 -- Ensure buttons are on top if needed
+groupActions.ZIndex = 10
 local gal = Instance.new("UIListLayout")
 gal.FillDirection = Enum.FillDirection.Horizontal
-gal.Padding = UDim.new(0, 4)
 gal.Parent = groupActions
 
-C.prevGroupBtn = {createTechButton("<", groupActions)}
-C.prevGroupBtn[1].Size = UDim2.new(0, 24, 1, 0)
-C.prevGroupBtn[1].LayoutOrder = 1
-
 C.groupNameLabel = {createTechButton("GROUP: DEFAULT", groupActions)}
-C.groupNameLabel[1].Size = UDim2.new(1, -144, 1, 0)
-C.groupNameLabel[1].AutoButtonColor = true -- Now clickable
-C.groupNameLabel[1].LayoutOrder = 2
+C.groupNameLabel[1].Size = UDim2.new(1, 0, 1, 0)
+C.groupNameLabel[1].AutoButtonColor = true
 
 C.groupNameInput = Instance.new("TextBox")
-C.groupNameInput.Size = UDim2.new(1, -144, 1, 0)
+C.groupNameInput.Size = UDim2.new(1, 0, 1, 0)
 C.groupNameInput.BackgroundColor3 = Theme.Background
 C.groupNameInput.TextColor3 = Theme.Accent
 C.groupNameInput.Font = Theme.FontTech
@@ -495,26 +489,28 @@ C.groupNameInput.Text = ""
 C.groupNameInput.PlaceholderText = "ENTER NAME..."
 C.groupNameInput.Visible = false
 C.groupNameInput.Parent = groupActions
-C.groupNameInput.LayoutOrder = 2
 local inputStroke = Instance.new("UIStroke")
 inputStroke.Color = Theme.Accent
 inputStroke.Thickness = 1
 inputStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 inputStroke.Parent = C.groupNameInput
 
-C.nextGroupBtn = {createTechButton(">", groupActions)}
-C.nextGroupBtn[1].Size = UDim2.new(0, 24, 1, 0)
-C.nextGroupBtn[1].LayoutOrder = 3
+local groupButtonsContainer = Instance.new("Frame")
+groupButtonsContainer.Size = UDim2.new(1, 0, 0, 32)
+groupButtonsContainer.BackgroundTransparency = 1
+groupButtonsContainer.Parent = TabAssets.frame
+local gbl = Instance.new("UIGridLayout")
+gbl.CellSize = UDim2.new(0.5, -2, 1, 0)
+gbl.CellPadding = UDim2.new(0, 4, 0, 0)
+gbl.Parent = groupButtonsContainer
 
-C.newGroupBtn = {createTechButton("ADD", groupActions)}
-C.newGroupBtn[1].Size = UDim2.new(0, 40, 1, 0)
+C.newGroupBtn = {createTechButton("ADD", groupButtonsContainer)}
+C.newGroupBtn[1].Size = UDim2.new(1, 0, 1, 0)
 C.newGroupBtn[1].TextColor3 = Theme.Success
-C.newGroupBtn[1].LayoutOrder = 4
 
-C.deleteGroupBtn = {createTechButton("DEL", groupActions)}
-C.deleteGroupBtn[1].Size = UDim2.new(0, 40, 1, 0)
+C.deleteGroupBtn = {createTechButton("DEL", groupButtonsContainer)}
+C.deleteGroupBtn[1].Size = UDim2.new(1, 0, 1, 0)
 C.deleteGroupBtn[1].TextColor3 = Theme.Destructive
-C.deleteGroupBtn[1].LayoutOrder = 5
 
 -- Dropdown container removed in favor of List View toggle
 
@@ -2038,40 +2034,6 @@ C.ghostTransparencyBox[1].FocusLost:Connect(function()
 end)
 
 toolbarBtn.Click:Connect(function() widget.Enabled = not widget.Enabled end)
-
-C.nextGroupBtn[1].MouseButton1Click:Connect(function()
-	local groups = {}
-	for _, c in ipairs(assetsFolder:GetChildren()) do if c:IsA("Folder") then table.insert(groups, c.Name) end end
-	table.sort(groups)
-
-	local currentIndex = 1
-	for i, name in ipairs(groups) do if name == currentAssetGroup then currentIndex = i break end end
-
-	currentIndex = currentIndex + 1
-	if currentIndex > #groups then currentIndex = 1 end
-	if #groups > 0 then
-		currentAssetGroup = groups[currentIndex]
-		updateGroupUI()
-		updateAssetUIList()
-	end
-end)
-
-C.prevGroupBtn[1].MouseButton1Click:Connect(function()
-	local groups = {}
-	for _, c in ipairs(assetsFolder:GetChildren()) do if c:IsA("Folder") then table.insert(groups, c.Name) end end
-	table.sort(groups)
-
-	local currentIndex = 1
-	for i, name in ipairs(groups) do if name == currentAssetGroup then currentIndex = i break end end
-
-	currentIndex = currentIndex - 1
-	if currentIndex < 1 then currentIndex = #groups end
-	if #groups > 0 then
-		currentAssetGroup = groups[currentIndex]
-		updateGroupUI()
-		updateAssetUIList()
-	end
-end)
 
 C.newGroupBtn[1].MouseButton1Click:Connect(function()
 	C.groupNameLabel[1].Visible = false
