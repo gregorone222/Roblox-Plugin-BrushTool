@@ -62,6 +62,12 @@ local nextStampAsset = nil
 local nextStampScale = nil
 local nextStampRotation = nil
 
+-- Transformation Randomizer States
+local randomizeScaleEnabled = false
+local randomizeRotationEnabled = false
+local randomizeColorEnabled = false
+local randomizeTransparencyEnabled = false
+
 -- Forward Declarations
 local updateAssetUIList
 local updateFillSelection = nil
@@ -566,46 +572,89 @@ C.assetSettingsAlign = {createTechToggle("Align to Surface", C.assetSettingsFram
 C.assetSettingsActive = {createTechToggle("Active in Brush", C.assetSettingsFrame)}
 
 -- Tuning Tab
-createSectionHeader("TRANSFORMATION RANDOMIZER", TabTuning.frame)
-local transGrid = Instance.new("Frame")
-transGrid.Size = UDim2.new(1, 0, 0, 0)
-transGrid.AutomaticSize = Enum.AutomaticSize.Y
-transGrid.BackgroundTransparency = 1
-transGrid.Parent = TabTuning.frame
-local tgl = Instance.new("UIGridLayout")
-tgl.CellSize = UDim2.new(0.48, 0, 0, 40)
-tgl.CellPadding = UDim2.new(0.04, 0, 0, 8)
-tgl.Parent = transGrid
-C.scaleMinBox = {createTechInput("SCALE MIN", "0.8", transGrid)}
-C.scaleMaxBox = {createTechInput("SCALE MAX", "1.2", transGrid)}
-C.rotXMinBox = {createTechInput("ROT X MIN", "0", transGrid)}
-C.rotXMaxBox = {createTechInput("ROT X MAX", "0", transGrid)}
-C.rotZMinBox = {createTechInput("ROT Z MIN", "0", transGrid)}
-C.rotZMaxBox = {createTechInput("ROT Z MAX", "0", transGrid)}
--- Added Missing Color Inputs
-C.hueMinBox = {createTechInput("HUE MIN", "0", transGrid)}
-C.hueMaxBox = {createTechInput("HUE MAX", "0", transGrid)}
-C.satMinBox = {createTechInput("SAT MIN", "0", transGrid)}
-C.satMaxBox = {createTechInput("SAT MAX", "0", transGrid)}
-C.valMinBox = {createTechInput("VAL MIN", "0", transGrid)}
-C.valMaxBox = {createTechInput("VAL MAX", "0", transGrid)}
-C.transMinBox = {createTechInput("TRNS MIN", "0", transGrid)}
-C.transMaxBox = {createTechInput("TRNS MAX", "0", transGrid)}
+local layoutOrderCounter = 1
 
-C.randomizeBtn = {createTechButton("RANDOMIZE VALUES", TabTuning.frame)}
-C.randomizeBtn[1].Size = UDim2.new(1, 0, 0, 32)
+local function createOrderedSectionHeader(text, parent)
+	local h = createSectionHeader(text, parent)
+	h.LayoutOrder = layoutOrderCounter
+	layoutOrderCounter = layoutOrderCounter + 1
+	return h
+end
 
-createSectionHeader("ENVIRONMENT CONTROL", TabTuning.frame)
+local function createOrderedRandomizerGroup(parent, toggleText)
+	local toggle = {createTechToggle(toggleText, parent)}
+	toggle[1].Parent.LayoutOrder = layoutOrderCounter
+	layoutOrderCounter = layoutOrderCounter + 1
+
+	local grid = Instance.new("Frame")
+	grid.AutomaticSize = Enum.AutomaticSize.Y
+	grid.Size = UDim2.new(1,0,0,0)
+	grid.BackgroundTransparency = 1
+	grid.Parent = parent
+	grid.LayoutOrder = layoutOrderCounter
+	layoutOrderCounter = layoutOrderCounter + 1
+
+	local layout = Instance.new("UIGridLayout")
+	layout.CellSize = UDim2.new(0.48, 0, 0, 40)
+	layout.CellPadding = UDim2.new(0.04, 0, 0, 8)
+	layout.Parent = grid
+
+	local randomizeBtn = {createTechButton("Randomize", parent)}
+	randomizeBtn[1].Size = UDim2.new(1, 0, 0, 28)
+	randomizeBtn[1].TextSize = 12
+	randomizeBtn[1].Parent.LayoutOrder = layoutOrderCounter
+	layoutOrderCounter = layoutOrderCounter + 1
+
+	return toggle, grid, randomizeBtn
+end
+
+createOrderedSectionHeader("TRANSFORMATION RANDOMIZER", TabTuning.frame)
+
+-- Scale
+C.randomizeScaleToggle, C.scaleGrid, C.randomizeScaleBtn = createOrderedRandomizerGroup(TabTuning.frame, "Randomize Scale")
+C.scaleMinBox = {createTechInput("SCALE MIN", "0.8", C.scaleGrid)}
+C.scaleMaxBox = {createTechInput("SCALE MAX", "1.2", C.scaleGrid)}
+
+-- Rotation
+C.randomizeRotationToggle, C.rotationGrid, C.randomizeRotationBtn = createOrderedRandomizerGroup(TabTuning.frame, "Randomize Rotation (X/Z)")
+C.rotXMinBox = {createTechInput("ROT X MIN", "0", C.rotationGrid)}
+C.rotXMaxBox = {createTechInput("ROT X MAX", "0", C.rotationGrid)}
+C.rotZMinBox = {createTechInput("ROT Z MIN", "0", C.rotationGrid)}
+C.rotZMaxBox = {createTechInput("ROT Z MAX", "0", C.rotationGrid)}
+
+-- Color
+C.randomizeColorToggle, C.colorGrid, C.randomizeColorBtn = createOrderedRandomizerGroup(TabTuning.frame, "Randomize Color (HSV)")
+C.hueMinBox = {createTechInput("HUE MIN", "0", C.colorGrid)}
+C.hueMaxBox = {createTechInput("HUE MAX", "0", C.colorGrid)}
+C.satMinBox = {createTechInput("SAT MIN", "0", C.colorGrid)}
+C.satMaxBox = {createTechInput("SAT MAX", "0", C.colorGrid)}
+C.valMinBox = {createTechInput("VAL MIN", "0", C.colorGrid)}
+C.valMaxBox = {createTechInput("VAL MAX", "0", C.colorGrid)}
+
+-- Transparency
+C.randomizeTransparencyToggle, C.transparencyGrid, C.randomizeTransparencyBtn = createOrderedRandomizerGroup(TabTuning.frame, "Randomize Transparency")
+C.transMinBox = {createTechInput("TRNS MIN", "0", C.transparencyGrid)}
+C.transMaxBox = {createTechInput("TRNS MAX", "0", C.transparencyGrid)}
+
+-- The global randomize button is now removed.
+
+createOrderedSectionHeader("ENVIRONMENT CONTROL", TabTuning.frame)
 C.smartSnapBtn = {createTechToggle("Smart Surface Snap", TabTuning.frame)}
+C.smartSnapBtn[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
 C.snapToGridBtn = {createTechToggle("Snap to Grid", TabTuning.frame)}
+C.snapToGridBtn[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
 C.gridSizeBox = {createTechInput("GRID SIZE", "4", TabTuning.frame)}
+C.gridSizeBox[2].LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
 C.ghostTransparencyBox = {createTechInput("GHOST TRANS", "0.65", TabTuning.frame)}
+C.ghostTransparencyBox[2].LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
 
-createSectionHeader("SURFACE LOCK", TabTuning.frame)
+
+createOrderedSectionHeader("SURFACE LOCK", TabTuning.frame)
 local surfaceGrid = Instance.new("Frame")
 surfaceGrid.Size = UDim2.new(1, 0, 0, 80)
 surfaceGrid.BackgroundTransparency = 1
 surfaceGrid.Parent = TabTuning.frame
+surfaceGrid.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
 local slLayout = Instance.new("UIGridLayout")
 slLayout.CellSize = UDim2.new(0.48, 0, 0, 32)
 slLayout.CellPadding = UDim2.new(0.04, 0, 0, 8)
@@ -755,18 +804,7 @@ scaleModel = function(model, scale)
 end
 
 randomizeProperties = function(target)
-	local hmin = parseNumber(C.hueMinBox[1].Text, 0)
-	local hmax = parseNumber(C.hueMaxBox[1].Text, 0)
-	local smin = parseNumber(C.satMinBox[1].Text, 0)
-	local smax = parseNumber(C.satMaxBox[1].Text, 0)
-	local vmin = parseNumber(C.valMinBox[1].Text, 0)
-	local vmax = parseNumber(C.valMaxBox[1].Text, 0)
-	local tmin = parseNumber(C.transMinBox[1].Text, 0)
-	local tmax = parseNumber(C.transMaxBox[1].Text, 0)
-
-	local hasColorShift = (hmin ~= 0 or hmax ~= 0 or smin ~= 0 or smax ~= 0 or vmin ~= 0 or vmax ~= 0)
-	local hasTransShift = (tmin ~= 0 or tmax ~= 0)
-	if not hasColorShift and not hasTransShift then return end
+	if not randomizeColorEnabled and not randomizeTransparencyEnabled then return end
 
 	local parts = {}
 	if target:IsA("BasePart") then table.insert(parts, target) else
@@ -774,15 +812,25 @@ randomizeProperties = function(target)
 			if descendant:IsA("BasePart") then table.insert(parts, descendant) end
 		end
 	end
+
 	for _, part in ipairs(parts) do
-		if hasColorShift then
+		if randomizeColorEnabled then
+			local hmin = parseNumber(C.hueMinBox[1].Text, 0)
+			local hmax = parseNumber(C.hueMaxBox[1].Text, 0)
+			local smin = parseNumber(C.satMinBox[1].Text, 0)
+			local smax = parseNumber(C.satMaxBox[1].Text, 0)
+			local vmin = parseNumber(C.valMinBox[1].Text, 0)
+			local vmax = parseNumber(C.valMaxBox[1].Text, 0)
+
 			local h, s, v = part.Color:ToHSV()
 			h = (h + randFloat(hmin, hmax)) % 1
 			s = math.clamp(s + randFloat(smin, smax), 0, 1)
 			v = math.clamp(v + randFloat(vmin, vmax), 0, 1)
 			part.Color = Color3.fromHSV(h, s, v)
 		end
-		if hasTransShift then
+		if randomizeTransparencyEnabled then
+			local tmin = parseNumber(C.transMinBox[1].Text, 0)
+			local tmax = parseNumber(C.transMaxBox[1].Text, 0)
 			part.Transparency = math.clamp(part.Transparency + randFloat(tmin, tmax), 0, 1)
 		end
 	end
@@ -817,10 +865,13 @@ end
 local function applyAssetTransform(asset, position, normal, overrideScale, overrideRotation)
 	local s = overrideScale
 	if not s then
-		local smin = parseNumber(C.scaleMinBox[1].Text, 0.8)
-		local smax = parseNumber(C.scaleMaxBox[1].Text, 1.2)
-		if smin <= 0 then smin = 0.1 end; if smax < smin then smax = smin end
-		s = randFloat(smin, smax)
+		s = 1.0 -- Default scale
+		if randomizeScaleEnabled then
+			local smin = parseNumber(C.scaleMinBox[1].Text, 0.8)
+			local smax = parseNumber(C.scaleMaxBox[1].Text, 1.2)
+			if smin <= 0 then smin = 0.1 end; if smax < smin then smax = smin end
+			s = randFloat(smin, smax)
+		end
 	end
 
 	local effectiveNormal = normal or Vector3.new(0, 1, 0)
@@ -828,16 +879,23 @@ local function applyAssetTransform(asset, position, normal, overrideScale, overr
 
 	if not randomRotation then
 		local xrot, yrot, zrot
-		if normal and surfaceAngleMode == "Floor" then
-			xrot = 0; zrot = 0; yrot = math.rad(math.random() * 360); effectiveNormal = Vector3.new(0, 1, 0)
-		elseif normal and surfaceAngleMode == "Ceiling" then
-			xrot = math.pi; zrot = 0; yrot = math.rad(math.random() * 360); effectiveNormal = Vector3.new(0, -1, 0)
-		else
-			local rotXMin = math.rad(parseNumber(C.rotXMinBox[1].Text, 0))
-			local rotXMax = math.rad(parseNumber(C.rotXMaxBox[1].Text, 0))
-			local rotZMin = math.rad(parseNumber(C.rotZMinBox[1].Text, 0))
-			local rotZMax = math.rad(parseNumber(C.rotZMaxBox[1].Text, 0))
-			xrot = randFloat(rotXMin, rotXMax); yrot = math.rad(math.random() * 360); zrot = randFloat(rotZMin, rotZMax)
+		yrot = math.rad(math.random() * 360) -- Always apply random Y rotation
+		xrot, zrot = 0, 0
+
+		if randomizeRotationEnabled then
+			if normal and surfaceAngleMode == "Floor" then
+				effectiveNormal = Vector3.new(0, 1, 0)
+			elseif normal and surfaceAngleMode == "Ceiling" then
+				xrot = math.pi
+				effectiveNormal = Vector3.new(0, -1, 0)
+			else
+				local rotXMin = math.rad(parseNumber(C.rotXMinBox[1].Text, 0))
+				local rotXMax = math.rad(parseNumber(C.rotXMaxBox[1].Text, 0))
+				local rotZMin = math.rad(parseNumber(C.rotZMinBox[1].Text, 0))
+				local rotZMax = math.rad(parseNumber(C.rotZMaxBox[1].Text, 0))
+				xrot = randFloat(rotXMin, rotXMax)
+				zrot = randFloat(rotZMin, rotZMax)
+			end
 		end
 		randomRotation = CFrame.Angles(xrot, yrot, zrot)
 	end
@@ -1517,11 +1575,31 @@ end
 C.applyPathBtn[1].MouseButton1Click:Connect(paintAlongPath)
 C.clearPathBtn[1].MouseButton1Click:Connect(clearPath)
 C.fillBtn[1].MouseButton1Click:Connect(function() if C.fillBtn[1].Text ~= "SELECT TARGET VOLUME" then fillArea(partToFill) end end)
-C.randomizeBtn[1].MouseButton1Click:Connect(function()
-	C.scaleMinBox[1].Text = string.format("%.2f", randFloat(0.5, 1.0)); C.scaleMaxBox[1].Text = string.format("%.2f", randFloat(1.1, 2.5))
-	C.rotXMinBox[1].Text = tostring(math.random(0, 45)); C.rotXMaxBox[1].Text = tostring(math.random(45, 90))
-	C.rotZMinBox[1].Text = tostring(math.random(0, 45)); C.rotZMaxBox[1].Text = tostring(math.random(45, 90))
+
+-- Individual Randomize Button Logic
+C.randomizeScaleBtn[1].MouseButton1Click:Connect(function()
+	C.scaleMinBox[1].Text = string.format("%.2f", randFloat(0.5, 1.0))
+	C.scaleMaxBox[1].Text = string.format("%.2f", randFloat(1.1, 2.5))
 end)
+C.randomizeRotationBtn[1].MouseButton1Click:Connect(function()
+	C.rotXMinBox[1].Text = tostring(math.random(0, 45))
+	C.rotXMaxBox[1].Text = tostring(math.random(45, 90))
+	C.rotZMinBox[1].Text = tostring(math.random(0, 45))
+	C.rotZMaxBox[1].Text = tostring(math.random(45, 90))
+end)
+C.randomizeColorBtn[1].MouseButton1Click:Connect(function()
+	C.hueMinBox[1].Text = "0"
+	C.hueMaxBox[1].Text = "1"
+	C.satMinBox[1].Text = string.format("%.2f", randFloat(-0.3, 0))
+	C.satMaxBox[1].Text = string.format("%.2f", randFloat(0, 0.3))
+	C.valMinBox[1].Text = string.format("%.2f", randFloat(-0.2, 0))
+	C.valMaxBox[1].Text = string.format("%.2f", randFloat(0, 0.2))
+end)
+C.randomizeTransparencyBtn[1].MouseButton1Click:Connect(function()
+	C.transMinBox[1].Text = "0"
+	C.transMaxBox[1].Text = string.format("%.2f", randFloat(0.2, 0.7))
+end)
+
 
 -- Helper for UI Updates
 updateModeButtonsUI = function()
@@ -1563,6 +1641,34 @@ updateToggle = function(btn, inner, label, state, activeText, inactiveText)
 	end
 end
 
+local function updateInputGroupEnabled(grid, enabled, randomizeBtn)
+	-- Update input boxes
+	for _, child in ipairs(grid:GetChildren()) do
+		if child:IsA("Frame") and child:FindFirstChildOfClass("TextBox") then
+			local inputBox = child:FindFirstChildOfClass("TextBox")
+			inputBox.Editable = enabled
+			if enabled then
+				inputBox.TextColor3 = Theme.Accent
+				child:FindFirstChildOfClass("TextLabel").TextColor3 = Theme.TextDim
+			else
+				inputBox.TextColor3 = Theme.TextDim
+				child:FindFirstChildOfClass("TextLabel").TextColor3 = Color3.fromHex("505050")
+			end
+		end
+	end
+	-- Update randomize button
+	if randomizeBtn then
+		randomizeBtn[1].Enabled = enabled
+		if enabled then
+			randomizeBtn[2].Color = Theme.Border
+			randomizeBtn[1].TextColor3 = Theme.Text
+		else
+			randomizeBtn[2].Color = Color3.fromHex("2a2a2a")
+			randomizeBtn[1].TextColor3 = Theme.TextDim
+		end
+	end
+end
+
 updateAllToggles = function()
 	updateToggle(C.pathFollowPathBtn[1], C.pathFollowPathBtn[2], C.pathFollowPathBtn[3], pathFollowPath)
 	updateToggle(C.pathCloseLoopBtn[1], C.pathCloseLoopBtn[2], C.pathCloseLoopBtn[3], pathCloseLoop)
@@ -1579,6 +1685,18 @@ updateAllToggles = function()
 
 	updateToggle(C.smartSnapBtn[1], C.smartSnapBtn[2], C.smartSnapBtn[3], smartSnapEnabled)
 	updateToggle(C.snapToGridBtn[1], C.snapToGridBtn[2], C.snapToGridBtn[3], snapToGridEnabled)
+
+	-- New randomization toggles
+	updateToggle(C.randomizeScaleToggle[1], C.randomizeScaleToggle[2], C.randomizeScaleToggle[3], randomizeScaleEnabled)
+	updateToggle(C.randomizeRotationToggle[1], C.randomizeRotationToggle[2], C.randomizeRotationToggle[3], randomizeRotationEnabled)
+	updateToggle(C.randomizeColorToggle[1], C.randomizeColorToggle[2], C.randomizeColorToggle[3], randomizeColorEnabled)
+	updateToggle(C.randomizeTransparencyToggle[1], C.randomizeTransparencyToggle[2], C.randomizeTransparencyToggle[3], randomizeTransparencyEnabled)
+
+	-- Update input groups
+	updateInputGroupEnabled(C.scaleGrid, randomizeScaleEnabled, C.randomizeScaleBtn)
+	updateInputGroupEnabled(C.rotationGrid, randomizeRotationEnabled, C.randomizeRotationBtn)
+	updateInputGroupEnabled(C.colorGrid, randomizeColorEnabled, C.randomizeColorBtn)
+	updateInputGroupEnabled(C.transparencyGrid, randomizeTransparencyEnabled, C.randomizeTransparencyBtn)
 
 	for mode, controls in pairs(C.surfaceButtons) do
 		if mode == surfaceAngleMode then
@@ -2026,6 +2144,12 @@ C.pathCloseLoopBtn[1].MouseButton1Click:Connect(function() pathCloseLoop = not p
 
 C.smartSnapBtn[1].MouseButton1Click:Connect(function() smartSnapEnabled = not smartSnapEnabled; updateAllToggles() end)
 C.snapToGridBtn[1].MouseButton1Click:Connect(function() snapToGridEnabled = not snapToGridEnabled; updateAllToggles() end)
+
+-- Randomization Toggles
+C.randomizeScaleToggle[1].MouseButton1Click:Connect(function() randomizeScaleEnabled = not randomizeScaleEnabled; updateAllToggles() end)
+C.randomizeRotationToggle[1].MouseButton1Click:Connect(function() randomizeRotationEnabled = not randomizeRotationEnabled; updateAllToggles() end)
+C.randomizeColorToggle[1].MouseButton1Click:Connect(function() randomizeColorEnabled = not randomizeColorEnabled; updateAllToggles() end)
+C.randomizeTransparencyToggle[1].MouseButton1Click:Connect(function() randomizeTransparencyEnabled = not randomizeTransparencyEnabled; updateAllToggles() end)
 
 C.gridSizeBox[1].FocusLost:Connect(function() gridSize = parseNumber(C.gridSizeBox[1].Text, 4) end)
 C.ghostTransparencyBox[1].FocusLost:Connect(function() 
