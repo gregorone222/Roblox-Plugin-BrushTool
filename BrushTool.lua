@@ -451,8 +451,10 @@ C.pathFrame.BackgroundTransparency = 1
 C.pathFrame.Visible = false
 C.pathFrame.Parent = C.contextContainer
 Instance.new("UIListLayout", C.pathFrame).Padding = UDim.new(0, 8)
-createSectionHeader("PATH SETTINGS", C.pathFrame)
+local pathHeader = createSectionHeader("PATH SETTINGS", C.pathFrame)
+pathHeader.LayoutOrder = 1
 local pathBtnGrid = Instance.new("Frame")
+pathBtnGrid.LayoutOrder = 2
 pathBtnGrid.Size = UDim2.new(1, 0, 0, 32)
 pathBtnGrid.BackgroundTransparency = 1
 pathBtnGrid.Parent = C.pathFrame
@@ -464,7 +466,9 @@ C.applyPathBtn = {createTechButton("GENERATE", pathBtnGrid)}
 C.clearPathBtn = {createTechButton("CLEAR", pathBtnGrid)}
 C.clearPathBtn[1].TextColor3 = Theme.Destructive
 C.pathFollowPathBtn = {createTechToggle("Follow Curvature", C.pathFrame)}
+C.pathFollowPathBtn[1].Parent.LayoutOrder = 3
 C.pathCloseLoopBtn = {createTechToggle("Close Loop", C.pathFrame)}
+C.pathCloseLoopBtn[1].Parent.LayoutOrder = 4
 
 -- Fill Context
 C.fillFrame = Instance.new("Frame")
@@ -1670,7 +1674,7 @@ local function updateInputGroupEnabled(grid, enabled, randomizeBtn)
 	end
 	-- Update randomize button
 	if randomizeBtn then
-		randomizeBtn[1].Interactable = enabled
+		randomizeBtn[1].Active = enabled
 		if enabled then
 			randomizeBtn[2].Color = Theme.Border
 			randomizeBtn[1].TextColor3 = Theme.Text
