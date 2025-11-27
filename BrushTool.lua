@@ -41,7 +41,6 @@ local lineStartPoint = nil
 local linePreviewPart = nil
 local pathPoints = {}
 local pathPreviewFolder = nil
-local pathFollowPath = false
 local partToFill = nil
 local fillSelectionBox = nil
 local sourceAsset = nil
@@ -166,10 +165,12 @@ local function createTechButton(text, parent)
 	stroke.Parent = btn
 
 	btn.MouseEnter:Connect(function()
+		if not btn.Active then return end
 		stroke.Color = Theme.Accent
 		btn.TextColor3 = Theme.Accent
 	end)
 	btn.MouseLeave:Connect(function()
+		if not btn.Active then return end
 		stroke.Color = Theme.Border
 		btn.TextColor3 = Theme.Text
 	end)
@@ -466,8 +467,6 @@ pgl.Parent = pathBtnGrid
 C.applyPathBtn = {createTechButton("GENERATE", pathBtnGrid)}
 C.clearPathBtn = {createTechButton("CLEAR", pathBtnGrid)}
 C.clearPathBtn[1].TextColor3 = Theme.Destructive
-C.pathFollowPathBtn = {createTechToggle("Follow Curvature", C.pathFrame)}
-C.pathFollowPathBtn[1].Parent.LayoutOrder = 3
 
 -- Fill Context
 C.fillFrame = Instance.new("Frame")
@@ -1324,25 +1323,6 @@ paintAlongPath = function()
 				local result = workspace:Raycast(rayOrigin, rayDir, params)
 				if result then
 					local placedAsset = placeAsset(assetToPlace, result.Position, result.Normal)
-					if placedAsset and pathFollowPath then
-						local tangent = (catmullRom(p0, p1, p2, p3, t + 0.01) - pointOnCurve).Unit
-						local upVector = result.Normal
-						local rightVector = tangent:Cross(upVector).Unit
-						if rightVector.Magnitude < 0.9 then rightVector = (tangent + Vector3.new(0.1, 0, 0.1)):Cross(upVector).Unit end
-						local lookVector = upVector:Cross(rightVector).Unit
-						local pathRotation = CFrame.fromMatrix(Vector3.new(), rightVector, upVector, -lookVector)
-						if placedAsset:IsA("Model") and placedAsset.PrimaryPart then
-							local pos = placedAsset:GetPrimaryPartCFrame().Position
-							local rx, ry, rz = (placedAsset:GetPrimaryPartCFrame() - pos):ToEulerAnglesXYZ()
-							local rotX, rotZ = rx or 0, rz or 0
-							placedAsset:SetPrimaryPartCFrame(CFrame.new(pos) * pathRotation * CFrame.Angles(rotX, 0, rotZ))
-						elseif placedAsset:IsA("BasePart") then
-							local pos = placedAsset.CFrame.Position
-							local rx, ry, rz = (placedAsset.CFrame - pos):ToEulerAnglesXYZ()
-							local rotX, rotZ = rx or 0, rz or 0
-							placedAsset.CFrame = CFrame.new(pos) * pathRotation * CFrame.Angles(rotX, 0, rotZ)
-						end
-					end
 					if placedAsset then placedAsset.Parent = groupFolder end
 				end
 				distanceSinceLastPaint = 0
@@ -1593,26 +1573,30 @@ C.fillBtn[1].MouseButton1Click:Connect(function() if C.fillBtn[1].Text ~= "SELEC
 
 -- Individual Randomize Button Logic
 C.randomizeScaleBtn[1].MouseButton1Click:Connect(function()
+	if not randomizeScaleEnabled then return end
 	C.scaleMinBox[1].Text = string.format("%.2f", randFloat(0.5, 1.0))
 	C.scaleMaxBox[1].Text = string.format("%.2f", randFloat(1.1, 2.5))
 end)
 C.randomizeRotationBtn[1].MouseButton1Click:Connect(function()
+	if not randomizeRotationEnabled then return end
 	C.rotXMinBox[1].Text = tostring(math.random(0, 45))
 	C.rotXMaxBox[1].Text = tostring(math.random(45, 90))
 	C.rotZMinBox[1].Text = tostring(math.random(0, 45))
 	C.rotZMaxBox[1].Text = tostring(math.random(45, 90))
 end)
 C.randomizeColorBtn[1].MouseButton1Click:Connect(function()
-	C.hueMinBox[1].Text = "0"
-	C.hueMaxBox[1].Text = "1"
+	if not randomizeColorEnabled then return end
+	C.hueMinBox[1].Text = string.format("%.2f", randFloat(0, 0.5))
+	C.hueMaxBox[1].Text = string.format("%.2f", randFloat(0.6, 1.0))
 	C.satMinBox[1].Text = string.format("%.2f", randFloat(-0.3, 0))
 	C.satMaxBox[1].Text = string.format("%.2f", randFloat(0, 0.3))
 	C.valMinBox[1].Text = string.format("%.2f", randFloat(-0.2, 0))
 	C.valMaxBox[1].Text = string.format("%.2f", randFloat(0, 0.2))
 end)
 C.randomizeTransparencyBtn[1].MouseButton1Click:Connect(function()
-	C.transMinBox[1].Text = "0"
-	C.transMaxBox[1].Text = string.format("%.2f", randFloat(0.2, 0.7))
+	if not randomizeTransparencyEnabled then return end
+	C.transMinBox[1].Text = string.format("%.2f", randFloat(0, 0.5))
+	C.transMaxBox[1].Text = string.format("%.2f", randFloat(0.6, 1.0))
 end)
 
 
@@ -1674,18 +1658,21 @@ local function updateInputGroupEnabled(grid, enabled, randomizeBtn)
 	-- Update randomize button
 	if randomizeBtn then
 		randomizeBtn[1].Active = enabled
+		pcall(function() randomizeBtn[1].Interactable = enabled end) -- Use Interactable if available
+
 		if enabled then
 			randomizeBtn[2].Color = Theme.Border
 			randomizeBtn[1].TextColor3 = Theme.Text
+			randomizeBtn[1].TextTransparency = 0
 		else
 			randomizeBtn[2].Color = Color3.fromHex("2a2a2a")
 			randomizeBtn[1].TextColor3 = Theme.TextDim
+			randomizeBtn[1].TextTransparency = 0.5
 		end
 	end
 end
 
 updateAllToggles = function()
-	updateToggle(C.pathFollowPathBtn[1], C.pathFollowPathBtn[2], C.pathFollowPathBtn[3], pathFollowPath)
 
 	local alignState = false
 	local activeState = false
@@ -2153,7 +2140,6 @@ C.assetSettingsActive[1].MouseButton1Click:Connect(function()
 end)
 
 -- Global Settings Toggles
-C.pathFollowPathBtn[1].MouseButton1Click:Connect(function() pathFollowPath = not pathFollowPath; updateAllToggles() end)
 
 C.smartSnapBtn[1].MouseButton1Click:Connect(function() smartSnapEnabled = not smartSnapEnabled; updateAllToggles() end)
 C.snapToGridBtn[1].MouseButton1Click:Connect(function() snapToGridEnabled = not snapToGridEnabled; updateAllToggles() end)
