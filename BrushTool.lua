@@ -62,6 +62,10 @@ local nextStampAsset = nil
 local nextStampScale = nil
 local nextStampRotation = nil
 
+-- Global Preview Folders
+previewFolder = workspace:FindFirstChild("_BrushPreview") or Instance.new("Folder", workspace); previewFolder.Name = "_BrushPreview"
+pathPreviewFolder = workspace:FindFirstChild("_PathPreview") or Instance.new("Folder", workspace); pathPreviewFolder.Name = "_PathPreview"
+
 -- Transformation Randomizer States
 local randomizeScaleEnabled = false
 local randomizeRotationEnabled = false
@@ -405,8 +409,9 @@ modeGrid.AutomaticSize = Enum.AutomaticSize.Y
 modeGrid.BackgroundTransparency = 1
 modeGrid.Parent = TabTools.frame
 local mgLayout = Instance.new("UIGridLayout")
-mgLayout.CellSize = UDim2.new(0.34, 0, 0, 36)
-mgLayout.CellPadding = UDim2.new(0.03, 0, 0, 8)
+mgLayout.CellSize = UDim2.new(0.48, 0, 0, 36)
+mgLayout.CellPadding = UDim2.new(0.04, 0, 0, 8)
+mgLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 mgLayout.Parent = modeGrid
 
 C.modeButtons = {}
@@ -582,28 +587,35 @@ local function createOrderedSectionHeader(text, parent)
 end
 
 local function createOrderedRandomizerGroup(parent, toggleText)
-	local toggle = {createTechToggle(toggleText, parent)}
-	toggle[1].Parent.LayoutOrder = layoutOrderCounter
+	local container = Instance.new("Frame")
+	container.AutomaticSize = Enum.AutomaticSize.Y
+	container.Size = UDim2.new(1, 0, 0, 0)
+	container.BackgroundTransparency = 1
+	container.LayoutOrder = layoutOrderCounter
+	container.Parent = parent
 	layoutOrderCounter = layoutOrderCounter + 1
+
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 4)
+	layout.Parent = container
+
+	local toggle = {createTechToggle(toggleText, container)}
 
 	local grid = Instance.new("Frame")
 	grid.AutomaticSize = Enum.AutomaticSize.Y
 	grid.Size = UDim2.new(1,0,0,0)
 	grid.BackgroundTransparency = 1
-	grid.Parent = parent
-	grid.LayoutOrder = layoutOrderCounter
-	layoutOrderCounter = layoutOrderCounter + 1
+	grid.Parent = container
 
-	local layout = Instance.new("UIGridLayout")
-	layout.CellSize = UDim2.new(0.48, 0, 0, 40)
-	layout.CellPadding = UDim2.new(0.04, 0, 0, 8)
-	layout.Parent = grid
+	local gridLayout = Instance.new("UIGridLayout")
+	gridLayout.CellSize = UDim2.new(0.48, 0, 0, 40)
+	gridLayout.CellPadding = UDim2.new(0.04, 0, 0, 8)
+	gridLayout.Parent = grid
 
-	local randomizeBtn = {createTechButton("Randomize", parent)}
+	local randomizeBtn = {createTechButton("Randomize", container)}
 	randomizeBtn[1].Size = UDim2.new(1, 0, 0, 28)
 	randomizeBtn[1].TextSize = 12
-	randomizeBtn[1].Parent.LayoutOrder = layoutOrderCounter
-	layoutOrderCounter = layoutOrderCounter + 1
 
 	return toggle, grid, randomizeBtn
 end
@@ -1646,7 +1658,7 @@ local function updateInputGroupEnabled(grid, enabled, randomizeBtn)
 	for _, child in ipairs(grid:GetChildren()) do
 		if child:IsA("Frame") and child:FindFirstChildOfClass("TextBox") then
 			local inputBox = child:FindFirstChildOfClass("TextBox")
-			inputBox.Editable = enabled
+			inputBox.TextEditable = enabled
 			if enabled then
 				inputBox.TextColor3 = Theme.Accent
 				child:FindFirstChildOfClass("TextLabel").TextColor3 = Theme.TextDim
@@ -1658,7 +1670,7 @@ local function updateInputGroupEnabled(grid, enabled, randomizeBtn)
 	end
 	-- Update randomize button
 	if randomizeBtn then
-		randomizeBtn[1].Enabled = enabled
+		randomizeBtn[1].Interactable = enabled
 		if enabled then
 			randomizeBtn[2].Color = Theme.Border
 			randomizeBtn[1].TextColor3 = Theme.Text
