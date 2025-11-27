@@ -42,7 +42,6 @@ local linePreviewPart = nil
 local pathPoints = {}
 local pathPreviewFolder = nil
 local pathFollowPath = false
-local pathCloseLoop = false
 local partToFill = nil
 local fillSelectionBox = nil
 local sourceAsset = nil
@@ -469,8 +468,6 @@ C.clearPathBtn = {createTechButton("CLEAR", pathBtnGrid)}
 C.clearPathBtn[1].TextColor3 = Theme.Destructive
 C.pathFollowPathBtn = {createTechToggle("Follow Curvature", C.pathFrame)}
 C.pathFollowPathBtn[1].Parent.LayoutOrder = 3
-C.pathCloseLoopBtn = {createTechToggle("Close Loop", C.pathFrame)}
-C.pathCloseLoopBtn[1].Parent.LayoutOrder = 4
 
 -- Fill Context
 C.fillFrame = Instance.new("Frame")
@@ -1305,7 +1302,6 @@ paintAlongPath = function()
 	local spacing = math.max(0.1, parseNumber(C.spacingBox[1].Text, 1.0))
 	local distanceSinceLastPaint = 0
 	local pointsToDraw = pathPoints
-	if pathCloseLoop and #pointsToDraw > 2 then pointsToDraw = {pointsToDraw[#pointsToDraw], unpack(pointsToDraw), pointsToDraw[1], pointsToDraw[2]} end
 	for i = 1, #pointsToDraw - 1 do
 		local p1 = pointsToDraw[i]; local p2 = pointsToDraw[i+1]
 		local p0 = pointsToDraw[i-1] or (p1 + (p1 - p2)); local p3 = pointsToDraw[i+2] or (p2 + (p2 - p1))
@@ -1337,11 +1333,13 @@ paintAlongPath = function()
 						local pathRotation = CFrame.fromMatrix(Vector3.new(), rightVector, upVector, -lookVector)
 						if placedAsset:IsA("Model") and placedAsset.PrimaryPart then
 							local pos = placedAsset:GetPrimaryPartCFrame().Position
-							local _, rotX, _, _, rotZ, _ = (placedAsset:GetPrimaryPartCFrame() - pos):ToEulerAnglesXYZ()
+							local rx, ry, rz = (placedAsset:GetPrimaryPartCFrame() - pos):ToEulerAnglesXYZ()
+							local rotX, rotZ = rx or 0, rz or 0
 							placedAsset:SetPrimaryPartCFrame(CFrame.new(pos) * pathRotation * CFrame.Angles(rotX, 0, rotZ))
 						elseif placedAsset:IsA("BasePart") then
 							local pos = placedAsset.CFrame.Position
-							local _, rotX, _, _, rotZ, _ = (placedAsset.CFrame - pos):ToEulerAnglesXYZ()
+							local rx, ry, rz = (placedAsset.CFrame - pos):ToEulerAnglesXYZ()
+							local rotX, rotZ = rx or 0, rz or 0
 							placedAsset.CFrame = CFrame.new(pos) * pathRotation * CFrame.Angles(rotX, 0, rotZ)
 						end
 					end
@@ -1367,7 +1365,6 @@ updatePathPreview = function()
 		marker.Position = point; marker.Parent = pathPreviewFolder
 	end
 	local pointsToDraw = pathPoints
-	if pathCloseLoop and #pointsToDraw > 2 then pointsToDraw = {pointsToDraw[#pointsToDraw], unpack(pointsToDraw), pointsToDraw[1], pointsToDraw[2]} end
 	if #pointsToDraw < 2 then return end
 	local segments = 20
 	for i = 1, #pointsToDraw - 1 do
@@ -1689,7 +1686,6 @@ end
 
 updateAllToggles = function()
 	updateToggle(C.pathFollowPathBtn[1], C.pathFollowPathBtn[2], C.pathFollowPathBtn[3], pathFollowPath)
-	updateToggle(C.pathCloseLoopBtn[1], C.pathCloseLoopBtn[2], C.pathCloseLoopBtn[3], pathCloseLoop)
 
 	local alignState = false
 	local activeState = false
@@ -2158,7 +2154,6 @@ end)
 
 -- Global Settings Toggles
 C.pathFollowPathBtn[1].MouseButton1Click:Connect(function() pathFollowPath = not pathFollowPath; updateAllToggles() end)
-C.pathCloseLoopBtn[1].MouseButton1Click:Connect(function() pathCloseLoop = not pathCloseLoop; updateAllToggles(); updatePathPreview() end)
 
 C.smartSnapBtn[1].MouseButton1Click:Connect(function() smartSnapEnabled = not smartSnapEnabled; updateAllToggles() end)
 C.snapToGridBtn[1].MouseButton1Click:Connect(function() snapToGridEnabled = not snapToGridEnabled; updateAllToggles() end)
