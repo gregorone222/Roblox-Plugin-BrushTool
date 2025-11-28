@@ -35,6 +35,68 @@ for mode, controls in pairs(UI.C.modeButtons) do
 end
 
 -- Asset Management Signals
+-- Group Signals
+UI.C.groupNameLabel[1].MouseButton1Click:Connect(function()
+	State.isGroupListView = true
+	UI.updateAssetUIList()
+end)
+
+local function commitNewGroup()
+	local name = Utils.trim(UI.C.groupNameInput.Text)
+	if name ~= "" then
+		if not State.assetsFolder:FindFirstChild(name) then
+			local nf = Instance.new("Folder")
+			nf.Name = name
+			nf.Parent = State.assetsFolder
+			State.currentAssetGroup = name
+			State.isGroupListView = false
+		end
+	end
+	UI.C.groupNameInput.Text = ""
+	UI.C.groupNameInput.Visible = false
+	UI.C.groupNameLabel[1].Visible = true
+	UI.updateGroupUI()
+	UI.updateAssetUIList()
+end
+
+UI.C.newGroupBtn[1].MouseButton1Click:Connect(function()
+	if not UI.C.groupNameInput.Visible then
+		UI.C.groupNameInput.Visible = true
+		UI.C.groupNameLabel[1].Visible = false
+		UI.C.groupNameInput:CaptureFocus()
+	else
+		commitNewGroup()
+	end
+end)
+
+UI.C.groupNameInput.FocusLost:Connect(function(enterPressed)
+	if enterPressed then commitNewGroup() end
+end)
+
+UI.C.deleteGroupBtn[1].MouseButton1Click:Connect(function()
+	if State.currentAssetGroup == "Default" then return end
+	local target = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
+	if target then target:Destroy() end
+	State.currentAssetGroup = "Default"
+	State.isGroupListView = false
+	UI.updateGroupUI()
+	UI.updateAssetUIList()
+end)
+
+-- Fill Signal
+UI.C.fillBtn[1].MouseButton1Click:Connect(function()
+	Core.fillSelectedPart()
+end)
+
+-- Path Signal
+UI.C.applyPathBtn[1].MouseButton1Click:Connect(function()
+	Core.generatePathAssets()
+end)
+
+UI.C.clearPathBtn[1].MouseButton1Click:Connect(function()
+	Core.clearPath()
+end)
+
 UI.C.addBtn[1].MouseButton1Click:Connect(function()
 	local selection = Selection:Get()
 	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
