@@ -19,6 +19,7 @@ local CollectionService = game:GetService("CollectionService")
 local ASSET_FOLDER_NAME = "BrushToolAssets"
 local WORKSPACE_FOLDER_NAME = "BrushToolCreations"
 local SETTINGS_KEY = "BrushToolAssetOffsets_v5"
+local PRESETS_KEY = "BrushToolPresets_v1"
 
 -- Ensure assets folder exists
 local assetsFolder = ServerStorage:FindFirstChild(ASSET_FOLDER_NAME)
@@ -30,6 +31,7 @@ end
 
 -- State Variables
 local assetOffsets = {}
+local presets = {}
 local currentMode = "Paint"
 local active = false
 local mouse = nil
@@ -106,6 +108,11 @@ local clearAssetList
 local randomPointInCircle
 local updateGroupUI
 local migrateAssetsToGroup
+local savePresetsToStorage
+local loadPresetsFromStorage
+local updatePresetUIList
+local captureCurrentState
+local applyPresetState
 
 --[[
     VISUAL THEME: CYBER-INDUSTRIAL
@@ -360,7 +367,7 @@ end
 local function createTab(name, label)
 	local btn = Instance.new("TextButton")
 	btn.Name = name
-	btn.Size = UDim2.new(0.333, 0, 1, 0)
+	btn.Size = UDim2.new(0.25, 0, 1, 0)
 	btn.BackgroundTransparency = 1
 	btn.Text = label
 	btn.Font = Theme.FontHeader
@@ -399,6 +406,7 @@ end
 
 local TabTools = createTab("Tools", "OPERATIONS")
 local TabAssets = createTab("Assets", "INVENTORY")
+local TabPresets = createTab("Presets", "PRESETS")
 local TabTuning = createTab("Tuning", "SYSTEM")
 
 -- Tools Tab
@@ -578,6 +586,30 @@ C.assetSettingsWeight = {createTechInput("PROBABILITY", "1", asGrid)}
 C.assetSettingsAlign = {createTechToggle("Align to Surface", C.assetSettingsFrame)}
 C.assetSettingsActive = {createTechToggle("Active in Brush", C.assetSettingsFrame)}
 
+-- Presets Tab
+createSectionHeader("NEW PRESET", TabPresets.frame)
+local presetCreationFrame = Instance.new("Frame")
+presetCreationFrame.Size = UDim2.new(1, 0, 0, 80)
+presetCreationFrame.BackgroundTransparency = 1
+presetCreationFrame.Parent = TabPresets.frame
+local pcl = Instance.new("UIListLayout")
+pcl.Padding = UDim.new(0, 8)
+pcl.Parent = presetCreationFrame
+
+C.presetNameInput = {createTechInput("PRESET NAME", "", presetCreationFrame)}
+C.savePresetBtn = {createTechButton("SAVE CURRENT CONFIG", presetCreationFrame)}
+C.savePresetBtn[1].TextColor3 = Theme.Success
+
+createSectionHeader("SAVED PROFILES", TabPresets.frame)
+C.presetListFrame = Instance.new("Frame")
+C.presetListFrame.Size = UDim2.new(1, 0, 0, 300)
+C.presetListFrame.BackgroundTransparency = 1
+C.presetListFrame.Parent = TabPresets.frame
+local plGrid = Instance.new("UIGridLayout")
+plGrid.CellSize = UDim2.new(1, 0, 0, 36)
+plGrid.CellPadding = UDim2.new(0, 0, 0, 4)
+plGrid.Parent = C.presetListFrame
+
 -- Tuning Tab
 local layoutOrderCounter = 1
 
@@ -692,6 +724,224 @@ switchTab("Tools")
 -- ==========================================
 -- LOGIC HELPERS & IMPLEMENTATION
 -- ==========================================
+
+savePresetsToStorage = function()
+	local ok, jsonString = pcall(HttpService.JSONEncode, HttpService, presets)
+	if ok then plugin:SetSetting(PRESETS_KEY, jsonString) end
+end
+
+loadPresetsFromStorage = function()
+	local jsonString = plugin:GetSetting(PRESETS_KEY)
+	if jsonString and #jsonString > 0 then
+		local ok, data = pcall(HttpService.JSONDecode, HttpService, jsonString)
+		if ok and type(data) == "table" then presets = data else presets = {} end
+	else presets = {} end
+end
+
+captureCurrentState = function()
+	local state = {}
+
+	-- Brush Params
+	state.brush = {
+		radius = parseNumber(C.radiusBox[1].Text, 10),
+		density = parseNumber(C.densityBox[1].Text, 10),
+		spacing = parseNumber(C.spacingBox[1].Text, 1.5)
+	}
+
+	-- Environment
+	state.environment = {
+		smartSnap = smartSnapEnabled,
+		snapGrid = snapToGridEnabled,
+		gridSize = gridSize,
+		surfaceMode = surfaceAngleMode,
+		ghostTransparency = ghostTransparency
+	}
+
+	-- Randomizers
+	state.randomizer = {
+		scale = {
+			enabled = randomizeScaleEnabled,
+			min = parseNumber(C.scaleMinBox[1].Text, 0.8),
+			max = parseNumber(C.scaleMaxBox[1].Text, 1.2)
+		},
+		rotation = {
+			enabled = randomizeRotationEnabled,
+			xmin = parseNumber(C.rotXMinBox[1].Text, 0),
+			xmax = parseNumber(C.rotXMaxBox[1].Text, 0),
+			zmin = parseNumber(C.rotZMinBox[1].Text, 0),
+			zmax = parseNumber(C.rotZMaxBox[1].Text, 0)
+		},
+		color = {
+			enabled = randomizeColorEnabled,
+			hmin = parseNumber(C.hueMinBox[1].Text, 0),
+			hmax = parseNumber(C.hueMaxBox[1].Text, 0),
+			smin = parseNumber(C.satMinBox[1].Text, 0),
+			smax = parseNumber(C.satMaxBox[1].Text, 0),
+			vmin = parseNumber(C.valMinBox[1].Text, 0),
+			vmax = parseNumber(C.valMaxBox[1].Text, 0)
+		},
+		transparency = {
+			enabled = randomizeTransparencyEnabled,
+			tmin = parseNumber(C.transMinBox[1].Text, 0),
+			tmax = parseNumber(C.transMaxBox[1].Text, 0)
+		}
+	}
+
+	-- Assets (Current Group Only)
+	state.assets = {}
+	local targetGroup = assetsFolder:FindFirstChild(currentAssetGroup)
+	if targetGroup then
+		for _, asset in ipairs(targetGroup:GetChildren()) do
+			state.assets[asset.Name] = {
+				weight = assetOffsets[asset.Name .. "_weight"] or 1,
+				offset = assetOffsets[asset.Name] or 0,
+				active = (assetOffsets[asset.Name .. "_active"] ~= false),
+				align = assetOffsets[asset.Name .. "_align"] or false
+			}
+		end
+	end
+
+	return state
+end
+
+applyPresetState = function(state)
+	if not state then return end
+
+	-- Apply Brush
+	if state.brush then
+		C.radiusBox[1].Text = tostring(state.brush.radius or 10)
+		C.densityBox[1].Text = tostring(state.brush.density or 10)
+		C.spacingBox[1].Text = tostring(state.brush.spacing or 1.5)
+	end
+
+	-- Apply Environment
+	if state.environment then
+		smartSnapEnabled = state.environment.smartSnap or false
+		snapToGridEnabled = state.environment.snapGrid or false
+		gridSize = state.environment.gridSize or 4
+		C.gridSizeBox[1].Text = tostring(gridSize)
+		surfaceAngleMode = state.environment.surfaceMode or "Off"
+		ghostTransparency = state.environment.ghostTransparency or 0.65
+		C.ghostTransparencyBox[1].Text = tostring(ghostTransparency)
+	end
+
+	-- Apply Randomizers
+	if state.randomizer then
+		local r = state.randomizer
+		if r.scale then
+			randomizeScaleEnabled = r.scale.enabled
+			C.scaleMinBox[1].Text = tostring(r.scale.min or 0.8)
+			C.scaleMaxBox[1].Text = tostring(r.scale.max or 1.2)
+		end
+		if r.rotation then
+			randomizeRotationEnabled = r.rotation.enabled
+			C.rotXMinBox[1].Text = tostring(r.rotation.xmin or 0)
+			C.rotXMaxBox[1].Text = tostring(r.rotation.xmax or 0)
+			C.rotZMinBox[1].Text = tostring(r.rotation.zmin or 0)
+			C.rotZMaxBox[1].Text = tostring(r.rotation.zmax or 0)
+		end
+		if r.color then
+			randomizeColorEnabled = r.color.enabled
+			C.hueMinBox[1].Text = tostring(r.color.hmin or 0)
+			C.hueMaxBox[1].Text = tostring(r.color.hmax or 0)
+			C.satMinBox[1].Text = tostring(r.color.smin or 0)
+			C.satMaxBox[1].Text = tostring(r.color.smax or 0)
+			C.valMinBox[1].Text = tostring(r.color.vmin or 0)
+			C.valMaxBox[1].Text = tostring(r.color.vmax or 0)
+		end
+		if r.transparency then
+			randomizeTransparencyEnabled = r.transparency.enabled
+			C.transMinBox[1].Text = tostring(r.transparency.tmin or 0)
+			C.transMaxBox[1].Text = tostring(r.transparency.tmax or 0)
+		end
+	end
+
+	-- Apply Assets
+	if state.assets then
+		for assetName, data in pairs(state.assets) do
+			assetOffsets[assetName .. "_weight"] = data.weight
+			assetOffsets[assetName] = data.offset
+			assetOffsets[assetName .. "_active"] = data.active
+			assetOffsets[assetName .. "_align"] = data.align
+		end
+	end
+
+	persistOffsets()
+	updateAllToggles()
+	updateAssetUIList()
+end
+
+updatePresetUIList = function()
+	for _, c in ipairs(C.presetListFrame:GetChildren()) do if c:IsA("GuiObject") then c:Destroy() end end
+
+	local sortedNames = {}
+	for name, _ in pairs(presets) do table.insert(sortedNames, name) end
+	table.sort(sortedNames)
+
+	for _, name in ipairs(sortedNames) do
+		local container = Instance.new("Frame")
+		container.BackgroundTransparency = 1
+		container.BackgroundColor3 = Theme.Panel
+		container.Parent = C.presetListFrame
+
+		local loadBtn = Instance.new("TextButton")
+		loadBtn.Size = UDim2.new(1, -30, 1, 0)
+		loadBtn.BackgroundColor3 = Theme.Panel
+		loadBtn.Text = "  " .. name
+		loadBtn.Font = Theme.FontTech
+		loadBtn.TextSize = 12
+		loadBtn.TextColor3 = Theme.Text
+		loadBtn.TextXAlignment = Enum.TextXAlignment.Left
+		loadBtn.AutoButtonColor = false
+		loadBtn.Parent = container
+
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Theme.Border
+		stroke.Parent = loadBtn
+
+		loadBtn.MouseEnter:Connect(function() stroke.Color = Theme.Accent; loadBtn.TextColor3 = Theme.Accent end)
+		loadBtn.MouseLeave:Connect(function() stroke.Color = Theme.Border; loadBtn.TextColor3 = Theme.Text end)
+
+		loadBtn.MouseButton1Click:Connect(function()
+			applyPresetState(presets[name])
+			print("Loaded Preset: " .. name)
+		end)
+
+		local delBtn = Instance.new("TextButton")
+		delBtn.Size = UDim2.new(0, 24, 1, 0)
+		delBtn.Position = UDim2.new(1, -24, 0, 0)
+		delBtn.BackgroundColor3 = Theme.Panel
+		delBtn.Text = "X"
+		delBtn.Font = Theme.FontMain
+		delBtn.TextColor3 = Theme.Destructive
+		delBtn.Parent = container
+		local delStroke = Instance.new("UIStroke")
+		delStroke.Color = Theme.Border
+		delStroke.Parent = delBtn
+
+		local isConfirm = false
+		delBtn.MouseButton1Click:Connect(function()
+			if not isConfirm then
+				isConfirm = true
+				delBtn.Text = "?"
+				delBtn.BackgroundColor3 = Theme.Destructive
+				delBtn.TextColor3 = Theme.Text
+				task.delay(2, function()
+					if isConfirm then
+						isConfirm = false
+						delBtn.Text = "X"
+						delBtn.BackgroundColor3 = Theme.Panel
+						delBtn.TextColor3 = Theme.Destructive
+					end
+				end)
+			else
+				presets[name] = nil
+				savePresetsToStorage()
+				updatePresetUIList()
+			end
+		end)
+	end
+end
 
 trim = function(s)
 	return s:match("^%s*(.-)%s*$") or s
@@ -2086,6 +2336,15 @@ end
 
 C.addBtn[1].MouseButton1Click:Connect(addSelectedAssets)
 
+C.savePresetBtn[1].MouseButton1Click:Connect(function()
+	local name = trim(C.presetNameInput[1].Text)
+	if name == "" then return end
+	presets[name] = captureCurrentState()
+	savePresetsToStorage()
+	updatePresetUIList()
+	C.presetNameInput[1].Text = ""
+end)
+
 local isClearingConfirm = false
 C.clearBtn[1].MouseButton1Click:Connect(function()
 	if not isClearingConfirm then
@@ -2230,9 +2489,11 @@ end)
 
 -- Init
 loadOffsets()
+loadPresetsFromStorage()
 migrateAssetsToGroup()
 Selection.SelectionChanged:Connect(updateFillSelection)
 updateAssetUIList()
+updatePresetUIList()
 updateGroupUI()
 updateModeButtonsUI()
 updateAllToggles()
