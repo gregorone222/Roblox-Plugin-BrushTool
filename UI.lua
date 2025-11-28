@@ -396,6 +396,7 @@ function UI.buildInterface()
 	UI.C.radiusBox = {createTechInput("RADIUS (Studs)", "10", brushParamsContainer)}
 	UI.C.densityBox = {createTechInput("DENSITY (Count)", "10", brushParamsContainer)}
 	UI.C.spacingBox = {createTechInput("SPACING (Studs)", "1.5", brushParamsContainer)}
+	UI.C.distanceBox = {createTechInput("DISTANCE (Studs)", "30", brushParamsContainer)}
 
 	UI.C.contextContainer = Instance.new("Frame")
 	UI.C.contextContainer.Size = UDim2.new(1, 0, 0, 20)
@@ -533,8 +534,35 @@ function UI.buildInterface()
 	asgl.Parent = asGrid
 	UI.C.assetSettingsOffsetY = {createTechInput("Y-OFFSET", "0", asGrid)}
 	UI.C.assetSettingsWeight = {createTechInput("PROBABILITY", "1", asGrid)}
-	UI.C.assetSettingsAlign = {createTechToggle("Align to Surface", UI.C.assetSettingsFrame)}
 	UI.C.assetSettingsActive = {createTechToggle("Active in Brush", UI.C.assetSettingsFrame)}
+
+	UI.C.assetSettingsActive[1].MouseButton1Click:Connect(function()
+		if State.selectedAssetInUI then
+			local key = State.selectedAssetInUI .. "_active"
+			local current = State.assetOffsets[key]
+			if current == nil then current = true end
+			State.assetOffsets[key] = not current
+			State.persistOffsets()
+			UI.updateAllToggles()
+			UI.updateAssetUIList()
+		end
+	end)
+
+	UI.C.assetSettingsOffsetY[1].FocusLost:Connect(function()
+		if State.selectedAssetInUI then
+			local val = Utils.parseNumber(UI.C.assetSettingsOffsetY[1].Text, 0)
+			State.assetOffsets[State.selectedAssetInUI] = val
+			State.persistOffsets()
+		end
+	end)
+
+	UI.C.assetSettingsWeight[1].FocusLost:Connect(function()
+		if State.selectedAssetInUI then
+			local val = Utils.parseNumber(UI.C.assetSettingsWeight[1].Text, 1)
+			State.assetOffsets[State.selectedAssetInUI .. "_weight"] = val
+			State.persistOffsets()
+		end
+	end)
 
 	-- PRESETS TAB
 	createSectionHeader("NEW PRESET", TabPresets.frame)
@@ -601,6 +629,19 @@ function UI.buildInterface()
 
 
 	createOrderedSectionHeader("SURFACE LOCK", TabTuning.frame)
+
+	UI.C.assetSettingsAlign = {createTechToggle("Align Asset to Surface", TabTuning.frame)}
+	UI.C.assetSettingsAlign[2].LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+
+	UI.C.assetSettingsAlign[1].MouseButton1Click:Connect(function()
+		if State.selectedAssetInUI then
+			local key = State.selectedAssetInUI .. "_align"
+			State.assetOffsets[key] = not State.assetOffsets[key]
+			State.persistOffsets()
+			UI.updateAllToggles()
+		end
+	end)
+
 	local surfaceGrid = Instance.new("Frame")
 	surfaceGrid.Size = UDim2.new(1, 0, 0, 80)
 	surfaceGrid.BackgroundTransparency = 1
@@ -621,6 +662,47 @@ function UI.buildInterface()
 			UI.updateAllToggles()
 		end)
 	end
+
+	-- Connect Tuning Toggles & Inputs (Moved to end to ensure elements exist)
+	-- Environment
+	UI.C.smartSnapBtn[1].MouseButton1Click:Connect(function()
+		State.smartSnapEnabled = not State.smartSnapEnabled
+		UI.updateAllToggles()
+	end)
+
+	UI.C.snapToGridBtn[1].MouseButton1Click:Connect(function()
+		State.snapToGridEnabled = not State.snapToGridEnabled
+		UI.updateAllToggles()
+	end)
+
+	UI.C.gridSizeBox[1].FocusLost:Connect(function()
+		State.gridSize = Utils.parseNumber(UI.C.gridSizeBox[1].Text, 4)
+	end)
+
+	UI.C.ghostTransparencyBox[1].FocusLost:Connect(function()
+		State.ghostTransparency = Utils.parseNumber(UI.C.ghostTransparencyBox[1].Text, 0.65)
+		if Core then Core.updatePreview() end
+	end)
+
+	-- Randomizers
+	local function bindRandomizer(toggleGroup, btnGroup, stateKey)
+		toggleGroup[1].MouseButton1Click:Connect(function()
+			State.Randomizer[stateKey].Enabled = not State.Randomizer[stateKey].Enabled
+			UI.updateAllToggles()
+		end)
+		btnGroup[1].MouseButton1Click:Connect(function()
+			if not State.Randomizer[stateKey].Enabled then return end
+			-- Force new randomization
+			State.nextStampScale = nil
+			State.nextStampRotation = nil
+			if Core then Core.updatePreview() end
+		end)
+	end
+
+	bindRandomizer(UI.C.randomizeScaleToggle, UI.C.randomizeScaleBtn, "Scale")
+	bindRandomizer(UI.C.randomizeRotationToggle, UI.C.randomizeRotationBtn, "Rotation")
+	bindRandomizer(UI.C.randomizeColorToggle, UI.C.randomizeColorBtn, "Color")
+	bindRandomizer(UI.C.randomizeTransparencyToggle, UI.C.randomizeTransparencyBtn, "Transparency")
 
 	switchTab("Tools")
 end
@@ -690,10 +772,12 @@ function UI.updateModeButtonsUI()
 	local showBrush = (State.currentMode == "Paint" or State.currentMode == "Erase" or State.currentMode == "Replace" or State.currentMode == "Volume" or State.currentMode == "Fill")
 	local showDensity = (State.currentMode == "Paint" or State.currentMode == "Volume" or State.currentMode == "Fill")
 	local showSpacing = (State.currentMode == "Paint" or State.currentMode == "Line" or State.currentMode == "Path")
+	local showDistance = (State.currentMode == "Volume")
 
 	UI.C.radiusBox[2].Visible = showBrush
 	UI.C.densityBox[2].Visible = showDensity
 	UI.C.spacingBox[2].Visible = showSpacing
+	UI.C.distanceBox[2].Visible = showDistance
 end
 
 function UI.updateOnOffButtonUI()
