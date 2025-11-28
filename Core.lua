@@ -1,0 +1,632 @@
+local Core = {}
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local Selection = game:GetService("Selection")
+local RunService = game:GetService("RunService")
+
+-- Dependencies
+local State, UI, Constants, Utils, pluginInstance
+
+local moveConn, downConn, upConn
+
+function Core.init(pPlugin, pState, pUI, pConstants, pUtils)
+	pluginInstance = pPlugin
+	State = pState
+	UI = pUI
+	Constants = pConstants
+	Utils = pUtils
+
+	UI.setCore(Core)
+end
+
+-- Helper functions used internally
+local function getWorkspaceContainer()
+	local container = workspace:FindFirstChild(Constants.WORKSPACE_FOLDER_NAME)
+	if not container or not container:IsA("Folder") then
+		container = Instance.new("Folder")
+		container.Name = Constants.WORKSPACE_FOLDER_NAME
+		container.Parent = workspace
+	end
+	return container
+end
+
+local function getRandomWeightedAsset(assetList)
+	local totalWeight = 0
+	for _, asset in ipairs(assetList) do
+		local weight = State.assetOffsets[asset.Name .. "_weight"] or 1
+		totalWeight = totalWeight + weight
+	end
+	if totalWeight == 0 then return assetList[math.random(1, #assetList)] end
+	local randomNum = math.random() * totalWeight
+	local currentWeight = 0
+	for _, asset in ipairs(assetList) do
+		local weight = State.assetOffsets[asset.Name .. "_weight"] or 1
+		currentWeight = currentWeight + weight
+		if randomNum <= currentWeight then return asset end
+	end
+	return assetList[#assetList]
+end
+
+local function randomizeProperties(target)
+	local r = State.Randomizer
+	if not r.Color.Enabled and not r.Transparency.Enabled then return end
+
+	local parts = {}
+	if target:IsA("BasePart") then table.insert(parts, target) else
+		for _, descendant in ipairs(target:GetDescendants()) do
+			if descendant:IsA("BasePart") then table.insert(parts, descendant) end
+		end
+	end
+
+	for _, part in ipairs(parts) do
+		if r.Color.Enabled then
+			local hmin = Utils.parseNumber(UI.C.hueMinBox[1].Text, 0)
+			local hmax = Utils.parseNumber(UI.C.hueMaxBox[1].Text, 0)
+			local smin = Utils.parseNumber(UI.C.satMinBox[1].Text, 0)
+			local smax = Utils.parseNumber(UI.C.satMaxBox[1].Text, 0)
+			local vmin = Utils.parseNumber(UI.C.valMinBox[1].Text, 0)
+			local vmax = Utils.parseNumber(UI.C.valMaxBox[1].Text, 0)
+
+			local h, s, v = part.Color:ToHSV()
+			h = (h + Utils.randFloat(hmin, hmax)) % 1
+			s = math.clamp(s + Utils.randFloat(smin, smax), 0, 1)
+			v = math.clamp(v + Utils.randFloat(vmin, vmax), 0, 1)
+			part.Color = Color3.fromHSV(h, s, v)
+		end
+		if r.Transparency.Enabled then
+			local tmin = Utils.parseNumber(UI.C.transMinBox[1].Text, 0)
+			local tmax = Utils.parseNumber(UI.C.transMaxBox[1].Text, 0)
+			part.Transparency = math.clamp(part.Transparency + Utils.randFloat(tmin, tmax), 0, 1)
+		end
+	end
+end
+
+local function applyAssetTransform(asset, position, normal, overrideScale, overrideRotation)
+	local s = overrideScale
+	if not s then
+		s = 1.0 
+		if State.Randomizer.Scale.Enabled then
+			local smin = Utils.parseNumber(UI.C.scaleMinBox[1].Text, 0.8)
+			local smax = Utils.parseNumber(UI.C.scaleMaxBox[1].Text, 1.2)
+			if smin <= 0 then smin = 0.1 end; if smax < smin then smax = smin end
+			s = Utils.randFloat(smin, smax)
+		end
+	end
+
+	local effectiveNormal = normal or Vector3.new(0, 1, 0)
+	local randomRotation = overrideRotation
+
+	if not randomRotation then
+		local xrot, yrot, zrot
+		yrot = math.rad(math.random() * 360) 
+		xrot, zrot = 0, 0
+
+		if State.Randomizer.Rotation.Enabled then
+			if normal and State.surfaceAngleMode == "Floor" then
+				effectiveNormal = Vector3.new(0, 1, 0)
+			elseif normal and State.surfaceAngleMode == "Ceiling" then
+				xrot = math.pi
+				effectiveNormal = Vector3.new(0, -1, 0)
+			else
+				local rotXMin = math.rad(Utils.parseNumber(UI.C.rotXMinBox[1].Text, 0))
+				local rotXMax = math.rad(Utils.parseNumber(UI.C.rotXMaxBox[1].Text, 0))
+				local rotZMin = math.rad(Utils.parseNumber(UI.C.rotZMinBox[1].Text, 0))
+				local rotZMax = math.rad(Utils.parseNumber(UI.C.rotZMaxBox[1].Text, 0))
+				xrot = Utils.randFloat(rotXMin, rotXMax)
+				zrot = Utils.randFloat(rotZMin, rotZMax)
+			end
+		end
+		randomRotation = CFrame.Angles(xrot, yrot, zrot)
+	end
+
+	local assetName = asset.Name:gsub("^GHOST_", "")
+	local customOffset = State.assetOffsets[assetName] or 0
+	local shouldAlign = State.assetOffsets[assetName .. "_align"] or false
+
+	if asset:IsA("Model") and asset.PrimaryPart then
+		if math.abs(s - 1) > 0.0001 then Utils.scaleModel(asset, s) end
+
+		local finalPosition = position + (effectiveNormal * customOffset)
+
+		if State.smartSnapEnabled then
+			local downDir = -effectiveNormal
+			if (not normal) or (State.surfaceAngleMode == "Off" and not shouldAlign) then downDir = Vector3.new(0, -1, 0) end
+
+			local tempCFrame = asset:GetPrimaryPartCFrame()
+			asset:SetPrimaryPartCFrame(CFrame.new(finalPosition) * randomRotation)
+
+			local maxDistAlongDown = -math.huge
+			for _, desc in ipairs(asset:GetDescendants()) do
+				if desc:IsA("BasePart") then
+					local s_part = desc.Size/2
+					local corners = {
+						Vector3.new(s_part.X, s_part.Y, s_part.Z), Vector3.new(s_part.X, s_part.Y, -s_part.Z),
+						Vector3.new(s_part.X, -s_part.Y, s_part.Z), Vector3.new(s_part.X, -s_part.Y, -s_part.Z),
+						Vector3.new(-s_part.X, s_part.Y, s_part.Z), Vector3.new(-s_part.X, s_part.Y, -s_part.Z),
+						Vector3.new(-s_part.X, -s_part.Y, s_part.Z), Vector3.new(-s_part.X, -s_part.Y, -s_part.Z)
+					}
+					for _, c in ipairs(corners) do
+						local worldC = desc.CFrame * c
+						local dist = (worldC - finalPosition):Dot(downDir)
+						if dist > maxDistAlongDown then maxDistAlongDown = dist end
+					end
+				end
+			end
+
+			if maxDistAlongDown > -math.huge then
+				local rayStart = finalPosition + (downDir * maxDistAlongDown) - (downDir * 1) 
+				local rayParams = RaycastParams.new()
+				rayParams.FilterDescendantsInstances = { State.previewFolder, getWorkspaceContainer(), State.pathPreviewFolder, asset }
+				rayParams.FilterType = Enum.RaycastFilterType.Exclude
+				local snapResult = workspace:Raycast(rayStart, downDir * 20, rayParams)
+				if snapResult then
+					local shift = (snapResult.Position - (finalPosition + downDir * maxDistAlongDown))
+					finalPosition = finalPosition + (downDir * (shift:Dot(downDir)))
+				end
+			end
+			asset:SetPrimaryPartCFrame(tempCFrame)
+		end
+
+		if State.snapToGridEnabled then finalPosition = Utils.snapPositionToGrid(finalPosition, State.gridSize) end
+
+		local finalCFrame
+		local forceAlign = (State.surfaceAngleMode == "Wall")
+		if (forceAlign or (shouldAlign and State.surfaceAngleMode == "Off")) and normal then
+			local rotatedCFrame = CFrame.new() * randomRotation
+			local look = rotatedCFrame.LookVector
+			local rightVec = look:Cross(effectiveNormal).Unit
+			local lookActual = effectiveNormal:Cross(rightVec).Unit
+			if rightVec.Magnitude < 0.9 then
+				look = rotatedCFrame.RightVector; rightVec = look:Cross(effectiveNormal).Unit; lookActual = effectiveNormal:Cross(rightVec).Unit
+			end
+			finalCFrame = CFrame.fromMatrix(finalPosition, rightVec, effectiveNormal, -lookActual)
+		else
+			finalCFrame = CFrame.new(finalPosition) * randomRotation
+		end
+		asset:SetPrimaryPartCFrame(finalCFrame)
+
+	elseif asset:IsA("BasePart") then
+		asset.Size = asset.Size * s
+		local finalYOffset = (asset.Size.Y / 2) + customOffset
+		local finalPos = position + (effectiveNormal * finalYOffset)
+
+		if State.smartSnapEnabled then
+			local downDir = -effectiveNormal
+			if (not normal) or (State.surfaceAngleMode == "Off" and not shouldAlign) then downDir = Vector3.new(0, -1, 0) end
+			local rayParams = RaycastParams.new()
+			rayParams.FilterDescendantsInstances = { State.previewFolder, getWorkspaceContainer(), State.pathPreviewFolder, asset }
+			rayParams.FilterType = Enum.RaycastFilterType.Exclude
+			local rayStart = finalPos + (downDir * (asset.Size.Y/2 - 1))
+			local snapResult = workspace:Raycast(rayStart, downDir * 20, rayParams)
+			if snapResult then
+				local currentBottom = finalPos + (downDir * (asset.Size.Y/2))
+				local shift = snapResult.Position - currentBottom
+				finalPos = finalPos + shift
+			end
+		end
+
+		if State.snapToGridEnabled then finalPos = Utils.snapPositionToGrid(finalPos, State.gridSize) end
+		local finalCFrame
+		local forceAlign = (State.surfaceAngleMode == "Wall")
+		if (forceAlign or (shouldAlign and State.surfaceAngleMode == "Off")) and normal then
+			local rotatedCFrame = CFrame.new() * randomRotation
+			local look = rotatedCFrame.LookVector
+			local rightVec = look:Cross(effectiveNormal).Unit
+			local lookActual = effectiveNormal:Cross(rightVec).Unit
+			if rightVec.Magnitude < 0.9 then
+				look = rotatedCFrame.RightVector; rightVec = look:Cross(effectiveNormal).Unit; lookActual = effectiveNormal:Cross(rightVec).Unit
+			end
+			finalCFrame = CFrame.fromMatrix(finalPos, rightVec, effectiveNormal, -lookActual)
+		else
+			finalCFrame = CFrame.new(finalPos) * randomRotation
+		end
+		asset.CFrame = finalCFrame
+	end
+	return asset
+end
+
+local function placeAsset(assetToClone, position, normal, overrideScale, overrideRotation)
+	local clone = assetToClone:Clone()
+	randomizeProperties(clone)
+	if clone:IsA("Model") and not clone.PrimaryPart then
+		for _, v in ipairs(clone:GetDescendants()) do if v:IsA("BasePart") then clone.PrimaryPart = v; break end end
+	end
+	applyAssetTransform(clone, position, normal, overrideScale, overrideRotation)
+	return clone
+end
+
+function Core.findSurfacePositionAndNormal()
+	if not State.mouse then return nil, nil, nil end
+	local camera = workspace.CurrentCamera
+	local unitRay = camera:ViewportPointToRay(State.mouse.X, State.mouse.Y)
+	local params = RaycastParams.new()
+	params.FilterDescendantsInstances = { State.previewFolder, getWorkspaceContainer(), State.pathPreviewFolder }
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * 2000, params)
+	if result then
+		if State.surfaceAngleMode == "Floor" and result.Normal.Y < 0.7 then return nil, nil, nil
+		elseif State.surfaceAngleMode == "Wall" and math.abs(result.Normal.Y) > 0.3 then return nil, nil, nil
+		elseif State.surfaceAngleMode == "Ceiling" and result.Normal.Y > -0.7 then return nil, nil, nil end
+		return result.Position, result.Normal, result.Instance
+	end
+	return nil, nil, nil
+end
+
+-- Business Logic Functions
+
+function Core.updateGhostPreview(position, normal)
+	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
+	if not targetGroup then return end
+	local allAssets = targetGroup:GetChildren()
+	local activeAssets = {}
+	for _, asset in ipairs(allAssets) do
+		local isActive = State.assetOffsets[asset.Name .. "_active"]
+		if isActive == nil then isActive = true end
+		if isActive then table.insert(activeAssets, asset) end
+	end
+	if #activeAssets == 0 then 
+		if State.ghostModel then State.ghostModel:Destroy(); State.ghostModel = nil end
+		return 
+	end
+
+	if not State.nextStampAsset or not State.nextStampAsset.Parent then
+		State.nextStampAsset = getRandomWeightedAsset(activeAssets)
+		State.nextStampScale = nil
+		State.nextStampRotation = nil
+	end
+
+	if not State.nextStampScale then
+		local smin = Utils.parseNumber(UI.C.scaleMinBox[1].Text, 0.8)
+		local smax = Utils.parseNumber(UI.C.scaleMaxBox[1].Text, 1.2)
+		if smin <= 0 then smin = 0.1 end; if smax < smin then smax = smin end
+		State.nextStampScale = Utils.randFloat(smin, smax)
+	end
+
+	if not State.nextStampRotation then
+		local rotXMin = math.rad(Utils.parseNumber(UI.C.rotXMinBox[1].Text, 0))
+		local rotXMax = math.rad(Utils.parseNumber(UI.C.rotXMaxBox[1].Text, 0))
+		local rotZMin = math.rad(Utils.parseNumber(UI.C.rotZMinBox[1].Text, 0))
+		local rotZMax = math.rad(Utils.parseNumber(UI.C.rotZMaxBox[1].Text, 0))
+		local xrot = Utils.randFloat(rotXMin, rotXMax)
+		local yrot = math.rad(math.random() * 360)
+		local zrot = Utils.randFloat(rotZMin, rotZMax)
+		if State.surfaceAngleMode == "Floor" and normal then
+			xrot = 0; zrot = 0
+		elseif State.surfaceAngleMode == "Ceiling" and normal then
+			xrot = math.pi; zrot = 0
+		end
+		State.nextStampRotation = CFrame.Angles(xrot, yrot, zrot)
+	end
+
+	if State.ghostModel then State.ghostModel:Destroy() end
+
+	State.ghostModel = State.nextStampAsset:Clone()
+	State.ghostModel.Name = "GHOST_" .. State.nextStampAsset.Name
+
+	if State.ghostModel:IsA("Model") and not State.ghostModel.PrimaryPart then
+		for _, v in ipairs(State.ghostModel:GetDescendants()) do if v:IsA("BasePart") then State.ghostModel.PrimaryPart = v; break end end
+	end
+
+	local partsToStyle = {}
+	if State.ghostModel:IsA("Model") then
+		for _, d in ipairs(State.ghostModel:GetDescendants()) do table.insert(partsToStyle, d) end
+	elseif State.ghostModel:IsA("BasePart") then
+		table.insert(partsToStyle, State.ghostModel)
+	end
+
+	for _, desc in ipairs(partsToStyle) do
+		if desc:IsA("BasePart") then
+			desc.Transparency = State.ghostTransparency
+			desc.CastShadow = false
+			desc.CanCollide = false
+			desc.Anchored = true
+			desc.Material = Enum.Material.ForceField
+			desc.Color = Constants.Theme.Accent
+		elseif desc:IsA("Decal") or desc:IsA("Texture") then
+			desc:Destroy()
+		end
+	end
+
+	State.ghostModel.Parent = State.previewFolder
+	applyAssetTransform(State.ghostModel, position, normal, State.nextStampScale, State.nextStampRotation)
+end
+
+function Core.updatePreview()
+	if not State.mouse or not State.previewPart then return end
+
+	local showGhost = (State.currentMode ~= "Replace" and State.currentMode ~= "Erase")
+
+	if not showGhost and State.ghostModel then
+		State.ghostModel:Destroy()
+		State.ghostModel = nil
+	end
+
+	if State.currentMode == "Line" and State.lineStartPoint then State.previewPart.Parent = nil
+	elseif State.currentMode == "Volume" then
+		State.previewPart.Parent = State.previewFolder
+		local radius = math.max(0.1, Utils.parseNumber(UI.C.radiusBox[1].Text, 10))
+		local unitRay = workspace.CurrentCamera:ViewportPointToRay(State.mouse.X, State.mouse.Y)
+		local positionInSpace = unitRay.Origin + unitRay.Direction * 100
+		State.previewPart.Shape = Enum.PartType.Ball
+		State.previewPart.Size = Vector3.new(radius * 2, radius * 2, radius * 2)
+		State.previewPart.CFrame = CFrame.new(positionInSpace)
+		State.previewPart.Color = Color3.fromRGB(150, 150, 255)
+		if State.cyl then State.cyl.Parent = nil end
+
+		if showGhost then
+			Core.updateGhostPreview(positionInSpace, nil)
+		end
+	else
+		if State.currentMode == "Paint" or State.currentMode == "Line" or State.currentMode == "Path" or State.currentMode == "Fill" then State.previewPart.Color = Color3.fromRGB(80, 255, 80)
+		elseif State.currentMode == "Replace" then State.previewPart.Color = Color3.fromRGB(80, 180, 255)
+		else State.previewPart.Color = Color3.fromRGB(255, 80, 80) end
+
+		State.previewPart.Shape = Enum.PartType.Cylinder
+		local radius = math.max(0.1, Utils.parseNumber(UI.C.radiusBox[1].Text, 10))
+		local surfacePos, normal = Core.findSurfacePositionAndNormal()
+
+		if not surfacePos or not normal or State.currentMode == "Line" or State.currentMode == "Path" then
+			State.previewPart.Parent = nil
+			if not surfacePos and showGhost and State.ghostModel then
+				State.ghostModel:Destroy(); State.ghostModel = nil
+			elseif surfacePos and showGhost then
+				Core.updateGhostPreview(surfacePos, normal)
+			end
+		else
+			if State.currentMode == "Stamp" then
+				State.previewPart.Parent = nil
+			else
+				State.previewPart.Parent = State.previewFolder
+				local pos = surfacePos
+				local look = Vector3.new(1, 0, 0)
+				if math.abs(look:Dot(normal)) > 0.99 then look = Vector3.new(0, 0, 1) end
+				local right = look:Cross(normal).Unit
+				local lookActual = normal:Cross(right).Unit
+				State.previewPart.CFrame = CFrame.fromMatrix(pos + normal * 0.05, normal, right, lookActual)
+				State.previewPart.Size = Vector3.new(0.02, radius*2, radius*2)
+			end
+			if showGhost then
+				Core.updateGhostPreview(surfacePos, normal)
+			end
+		end
+	end
+	if State.currentMode == "Line" and State.lineStartPoint and State.linePreviewPart then
+		local endPoint, _ = Core.findSurfacePositionAndNormal()
+		if endPoint then
+			State.linePreviewPart.Parent = State.previewFolder
+			local mag = (endPoint - State.lineStartPoint).Magnitude
+			State.linePreviewPart.Size = Vector3.new(0.2, 0.2, mag)
+			State.linePreviewPart.CFrame = CFrame.new(State.lineStartPoint, endPoint) * CFrame.new(0, 0, -mag/2)
+		else State.linePreviewPart.Parent = nil end
+	elseif State.linePreviewPart then State.linePreviewPart.Parent = nil end
+end
+
+function Core.paintAt(center, surfaceNormal)
+	local radius = math.max(0.1, Utils.parseNumber(UI.C.radiusBox[1].Text, 10))
+	local density = math.max(1, math.floor(Utils.parseNumber(UI.C.densityBox[1].Text, 10)))
+	local spacing = math.max(0.1, Utils.parseNumber(UI.C.spacingBox[1].Text, 1.0))
+
+	ChangeHistoryService:SetWaypoint("Brush - Before Paint")
+	local container = getWorkspaceContainer()
+	local groupFolder = Instance.new("Folder")
+	groupFolder.Name = "BrushGroup_" .. tostring(math.floor(os.time()))
+	groupFolder.Parent = container
+	local placed = {}
+
+	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
+	if not targetGroup then groupFolder:Destroy(); return end
+
+	local allAssets = targetGroup:GetChildren()
+	local activeAssets = {}
+	for _, asset in ipairs(allAssets) do
+		local isActive = State.assetOffsets[asset.Name .. "_active"]
+		if isActive == nil then isActive = true end
+		if isActive then table.insert(activeAssets, asset) end
+	end
+	if #activeAssets == 0 then groupFolder:Destroy(); return end
+
+	local up = surfaceNormal
+	local look = Vector3.new(1, 0, 0)
+	if math.abs(up:Dot(look)) > 0.99 then look = Vector3.new(0, 0, 1) end
+	local right = look:Cross(up).Unit
+	local look_actual = up:Cross(right).Unit
+	local planeCFrame = CFrame.fromMatrix(center, right, up, -look_actual)
+
+	for i = 1, density do
+		local assetToClone = getRandomWeightedAsset(activeAssets)
+		if not assetToClone then break end
+		local found = false; local candidatePos = nil; local candidateNormal = surfaceNormal; local attempts = 0
+		while not found and attempts < 12 do
+			attempts = attempts + 1
+			local offset2D = Utils.randomPointInCircle(radius)
+			local spawnPos = planeCFrame:PointToWorldSpace(Vector3.new(offset2D.X, 0, offset2D.Z))
+			local rayOrigin = spawnPos + surfaceNormal * 5; local rayDir = -surfaceNormal * 10
+			local params = RaycastParams.new()
+			params.FilterDescendantsInstances = { State.previewFolder, container }; params.FilterType = Enum.RaycastFilterType.Exclude
+			local result = workspace:Raycast(rayOrigin, rayDir, params)
+			if result and result.Instance then
+				local posOnSurface = result.Position
+				local ok = true
+				for _, p in ipairs(placed) do if (p - posOnSurface).Magnitude < spacing then ok = false; break end end
+				if ok then found = true; candidatePos = posOnSurface; candidateNormal = result.Normal end
+			end
+		end
+		if candidatePos then
+			local placedAsset = placeAsset(assetToClone, candidatePos, candidateNormal)
+			if placedAsset then placedAsset.Parent = groupFolder end
+			table.insert(placed, candidatePos)
+		end
+	end
+	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
+	ChangeHistoryService:SetWaypoint("Brush - After Paint")
+end
+
+function Core.stampAt(center, surfaceNormal)
+	ChangeHistoryService:SetWaypoint("Brush - Before Stamp")
+	local container = getWorkspaceContainer()
+	local groupFolder = Instance.new("Folder"); groupFolder.Name = "BrushStamp_" .. tostring(math.floor(os.time())); groupFolder.Parent = container
+
+	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
+	if not targetGroup then groupFolder:Destroy(); return end
+	local allAssets = targetGroup:GetChildren()
+
+	local activeAssets = {}
+	for _, asset in ipairs(allAssets) do
+		local isActive = State.assetOffsets[asset.Name .. "_active"]
+		if isActive == nil then isActive = true end
+		if isActive then table.insert(activeAssets, asset) end
+	end
+	if #activeAssets == 0 then groupFolder:Destroy(); return end
+
+	local assetToPlace = State.nextStampAsset or getRandomWeightedAsset(activeAssets)
+	if assetToPlace then
+		local placedAsset = placeAsset(assetToPlace, center, surfaceNormal, State.nextStampScale, State.nextStampRotation)
+		if placedAsset then placedAsset.Parent = groupFolder end
+	end
+	State.nextStampAsset = nil 
+	State.nextStampScale = nil
+	State.nextStampRotation = nil
+	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
+	ChangeHistoryService:SetWaypoint("Brush - After Stamp")
+end
+
+function Core.updateFillSelection()
+	if State.currentMode ~= "Fill" then
+		State.partToFill = nil
+		if State.fillSelectionBox then State.fillSelectionBox.Adornee = nil end
+		UI.C.fillBtn[1].Text = "SELECT TARGET VOLUME"
+		UI.C.fillBtn[1].TextColor3 = Constants.Theme.Text
+		return
+	end
+	local selection = Selection:Get()
+	if #selection == 1 and selection[1]:IsA("BasePart") then
+		State.partToFill = selection[1]
+		if not State.fillSelectionBox then
+			State.fillSelectionBox = Instance.new("SelectionBox")
+			State.fillSelectionBox.Color3 = Constants.Theme.Accent
+			State.fillSelectionBox.LineThickness = 0.1
+			State.fillSelectionBox.Parent = State.previewFolder
+		end
+		State.fillSelectionBox.Adornee = State.partToFill
+		UI.C.fillBtn[1].Text = "FILL: " .. State.partToFill.Name
+		UI.C.fillBtn[1].TextColor3 = Constants.Theme.Success
+	else
+		State.partToFill = nil
+		if State.fillSelectionBox then State.fillSelectionBox.Adornee = nil end
+		UI.C.fillBtn[1].Text = "SELECT TARGET VOLUME"
+		UI.C.fillBtn[1].TextColor3 = Constants.Theme.Text
+	end
+end
+
+function Core.clearPath() State.pathPoints = {}; State.pathPreviewFolder:ClearAllChildren() end
+
+function Core.setMode(newMode)
+	if State.currentMode == newMode then return end
+	if State.currentMode == "Replace" then State.sourceAsset = nil; State.targetAsset = nil end
+	if State.currentMode == "Erase" and newMode ~= "Erase" then State.eraseFilter = {} end
+	State.lineStartPoint = nil
+	if State.linePreviewPart then State.linePreviewPart.Parent = nil end
+	if newMode ~= "Path" then Core.clearPath() end
+
+	State.currentMode = newMode
+	UI.updateModeButtonsUI()
+	Core.updatePreview()
+	Core.updateFillSelection()
+end
+
+-- Event Handlers
+local function onMove()
+	if not State.active then return end
+	Core.updatePreview()
+	if State.isPainting then
+		local unitRay = workspace.CurrentCamera:ViewportPointToRay(State.mouse.X, State.mouse.Y)
+		local params = RaycastParams.new(); params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = {State.previewFolder, getWorkspaceContainer(), State.pathPreviewFolder}
+		local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, params)
+		if result and State.lastPaintPosition then
+			local spacing = math.max(0.1, Utils.parseNumber(UI.C.spacingBox[1].Text, 1.0))
+			if (result.Position - State.lastPaintPosition).Magnitude >= spacing then
+				if State.currentMode == "Paint" then Core.paintAt(result.Position, result.Normal)
+					-- elseif currentMode == "Erase" then eraseAt(result.Position)
+					-- elseif currentMode == "Replace" then replaceAt(result.Position)
+				end
+				State.lastPaintPosition = result.Position
+			end
+		end
+	end
+end
+
+local function onDown()
+	if not State.active or not State.mouse then return end
+	local center, normal, _ = Core.findSurfacePositionAndNormal()
+
+	if State.currentMode == "Volume" then
+		-- paintInVolume(pos)
+		return
+	end
+
+	if not center then return end
+
+	if State.currentMode == "Line" then
+		if not State.lineStartPoint then State.lineStartPoint = center
+		else 
+			-- paintAlongLine(State.lineStartPoint, center)
+			State.lineStartPoint = nil 
+		end
+	elseif State.currentMode == "Path" then
+		table.insert(State.pathPoints, center); 
+		-- updatePathPreview()
+	elseif State.currentMode == "Paint" or State.currentMode == "Stamp" then
+		if State.currentMode == "Paint" then Core.paintAt(center, normal)
+		elseif State.currentMode == "Stamp" then Core.stampAt(center, normal)
+		end
+
+		if State.currentMode ~= "Stamp" then
+			State.isPainting = true
+			State.lastPaintPosition = center
+		end
+	end
+end
+
+local function onUp()
+	State.isPainting = false
+	State.lastPaintPosition = nil
+end
+
+function Core.activate()
+	if State.active then return end
+	State.active = true
+	State.previewPart = Instance.new("Part")
+	State.previewPart.Name = "BrushRadiusPreview"
+	State.previewPart.Anchored = true; State.previewPart.CanCollide = false; State.previewPart.Transparency = 0.6; State.previewPart.Material = Enum.Material.Neon
+	State.linePreviewPart = Instance.new("Part")
+	State.linePreviewPart.Name = "BrushLinePreview"
+	State.linePreviewPart.Anchored = true; State.linePreviewPart.CanCollide = false; State.linePreviewPart.Transparency = 0.5; State.linePreviewPart.Material = Enum.Material.Neon
+
+	pluginInstance:Activate(true)
+	State.mouse = pluginInstance:GetMouse()
+	moveConn = State.mouse.Move:Connect(onMove)
+	downConn = State.mouse.Button1Down:Connect(onDown)
+	upConn = State.mouse.Button1Up:Connect(onUp)
+
+	Core.updatePreview()
+	Core.updateFillSelection()
+	-- toolbarBtn:SetActive(true) -- Handled in Main or callback
+	UI.updateOnOffButtonUI()
+end
+
+function Core.deactivate()
+	if not State.active then return end
+	State.active = false
+	if moveConn then moveConn:Disconnect(); moveConn = nil end
+	if downConn then downConn:Disconnect(); downConn = nil end
+	if upConn then upConn:Disconnect(); upConn = nil end
+	State.isPainting = false; State.lastPaintPosition = nil; State.lineStartPoint = nil
+	Core.clearPath(); State.mouse = nil
+	if State.previewPart then State.previewPart:Destroy(); State.previewPart = nil; State.cyl = nil end
+	if State.linePreviewPart then State.linePreviewPart:Destroy(); State.linePreviewPart = nil end
+	if State.fillSelectionBox then State.fillSelectionBox.Adornee = nil end
+	-- toolbarBtn:SetActive(false)
+	UI.updateOnOffButtonUI()
+end
+
+return Core
