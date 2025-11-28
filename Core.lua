@@ -46,6 +46,34 @@ local function getRandomWeightedAsset(assetList)
 	return assetList[#assetList]
 end
 
+local function getAssetsInRadius(center, radius)
+	local container = getWorkspaceContainer()
+	local overlapParams = OverlapParams.new()
+	overlapParams.FilterDescendantsInstances = {container}
+	overlapParams.FilterType = Enum.RaycastFilterType.Include
+
+	local parts = workspace:GetPartBoundsInRadius(center, radius, overlapParams)
+	local assets = {}
+	local seen = {}
+
+	for _, part in ipairs(parts) do
+		local asset = part
+		while asset.Parent and asset.Parent.Parent ~= container and asset.Parent ~= container do
+			asset = asset.Parent
+		end
+		if asset.Parent and (asset.Parent == container or asset.Parent.Parent == container) then
+			if not seen[asset] then
+				seen[asset] = true
+				-- Check if the asset's pivot is within the radius (stricter check than simple overlap)
+				if (asset:GetPivot().Position - center).Magnitude <= radius then
+					table.insert(assets, asset)
+				end
+			end
+		end
+	end
+	return assets
+end
+
 local function randomizeProperties(target)
 	local r = State.Randomizer
 	if not r.Color.Enabled and not r.Transparency.Enabled then return end
@@ -344,8 +372,12 @@ function Core.updatePreview()
 	elseif State.currentMode == "Volume" then
 		State.previewPart.Parent = State.previewFolder
 		local radius = math.max(0.1, Utils.parseNumber(UI.C.radiusBox[1].Text, 10))
+		local distance = math.max(1, Utils.parseNumber(UI.C.distanceBox[1].Text, 30))
+
+		-- Always float in air for Volume mode (Space Brush behavior)
 		local unitRay = workspace.CurrentCamera:ViewportPointToRay(State.mouse.X, State.mouse.Y)
-		local positionInSpace = unitRay.Origin + unitRay.Direction * 100
+		local positionInSpace = unitRay.Origin + unitRay.Direction * distance
+
 		State.previewPart.Shape = Enum.PartType.Ball
 		State.previewPart.Size = Vector3.new(radius * 2, radius * 2, radius * 2)
 		State.previewPart.CFrame = CFrame.new(positionInSpace)
@@ -489,6 +521,182 @@ function Core.stampAt(center, surfaceNormal)
 	ChangeHistoryService:SetWaypoint("Brush - After Stamp")
 end
 
+function Core.paintAlongLine(startPos, endPos)
+	local spacing = math.max(0.1, Utils.parseNumber(UI.C.spacingBox[1].Text, 1.0))
+	local vector = endPos - startPos
+	local dist = vector.Magnitude
+	local direction = vector.Unit
+	local count = math.floor(dist / spacing)
+
+	ChangeHistoryService:SetWaypoint("Brush - Before Line Paint")
+	local container = getWorkspaceContainer()
+	local groupFolder = Instance.new("Folder")
+	groupFolder.Name = "BrushLine_" .. tostring(math.floor(os.time()))
+	groupFolder.Parent = container
+
+	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
+	if not targetGroup then groupFolder:Destroy(); return end
+	local allAssets = targetGroup:GetChildren()
+	local activeAssets = {}
+	for _, asset in ipairs(allAssets) do
+		local isActive = State.assetOffsets[asset.Name .. "_active"]
+		if isActive == nil then isActive = true end
+		if isActive then table.insert(activeAssets, asset) end
+	end
+
+	if #activeAssets > 0 then
+		for i = 0, count do
+			local alpha = 0
+			if count > 0 then alpha = i / count end
+			-- If single point (dist < spacing), just paint once at end
+			if count == 0 then alpha = 1 end
+
+			local pointOnLine = startPos + (direction * (dist * alpha))
+
+			-- Raycast down/against normal to find surface
+			-- We assume 'Down' is generally -Y, but we can try to be smart if we had normal info.
+			-- For a line drawn on surface, we typically want to project it onto the geometry.
+			local rayOrigin = pointOnLine + Vector3.new(0, 5, 0) 
+			local rayDir = Vector3.new(0, -10, 0)
+
+			-- Use a broader raycast to catch walls if the line is vertical?
+			-- For now, let's assume standard "drape line over terrain" behavior (Top-down projection)
+			local params = RaycastParams.new()
+			params.FilterDescendantsInstances = { State.previewFolder, container, State.pathPreviewFolder }
+			params.FilterType = Enum.RaycastFilterType.Exclude
+
+			local result = workspace:Raycast(rayOrigin, rayDir, params)
+			local targetPos = pointOnLine
+			local targetNormal = Vector3.new(0, 1, 0)
+
+			if result then
+				targetPos = result.Position
+				targetNormal = result.Normal
+			else
+				-- If no surface found directly below, try raycasting towards the line end point normal if available?
+				-- Fallback: just place on the line in air
+			end
+
+			local assetToClone = getRandomWeightedAsset(activeAssets)
+			if assetToClone then
+				local placedAsset = placeAsset(assetToClone, targetPos, targetNormal)
+				if placedAsset then placedAsset.Parent = groupFolder end
+			end
+
+			if count == 0 then break end
+		end
+	end
+
+	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
+	ChangeHistoryService:SetWaypoint("Brush - After Line Paint")
+end
+
+function Core.fillSelectedPart()
+	if not State.partToFill then return end
+	local density = math.max(1, math.floor(Utils.parseNumber(UI.C.densityBox[1].Text, 10)))
+
+	ChangeHistoryService:SetWaypoint("Brush - Before Fill")
+	local container = getWorkspaceContainer()
+	local groupFolder = Instance.new("Folder")
+	groupFolder.Name = "BrushFill_" .. tostring(math.floor(os.time()))
+	groupFolder.Parent = container
+
+	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
+	if not targetGroup then groupFolder:Destroy(); return end
+	local allAssets = targetGroup:GetChildren()
+	local activeAssets = {}
+	for _, asset in ipairs(allAssets) do
+		local isActive = State.assetOffsets[asset.Name .. "_active"]
+		if isActive == nil then isActive = true end
+		if isActive then table.insert(activeAssets, asset) end
+	end
+
+	if #activeAssets > 0 then
+		local cf = State.partToFill.CFrame
+		local size = State.partToFill.Size
+
+		for i = 1, density do
+			local assetToClone = getRandomWeightedAsset(activeAssets)
+			if assetToClone then
+				local rx = Utils.randFloat(-size.X/2, size.X/2)
+				local ry = Utils.randFloat(-size.Y/2, size.Y/2)
+				local rz = Utils.randFloat(-size.Z/2, size.Z/2)
+				local worldPos = cf * Vector3.new(rx, ry, rz)
+
+				-- For Fill, we typically align to identity or random, not necessarily surface normal since it's volumetric.
+				-- But placeAsset expects a normal. We can use UpVector.
+				local normal = Vector3.new(0, 1, 0) 
+
+				local placedAsset = placeAsset(assetToClone, worldPos, normal)
+				if placedAsset then placedAsset.Parent = groupFolder end
+			end
+		end
+	end
+
+	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
+	ChangeHistoryService:SetWaypoint("Brush - After Fill")
+end
+
+function Core.eraseAt(center)
+	local radius = math.max(0.1, Utils.parseNumber(UI.C.radiusBox[1].Text, 10))
+	local assets = getAssetsInRadius(center, radius)
+
+	if #assets > 0 then
+		ChangeHistoryService:SetWaypoint("Brush - Before Erase")
+		for _, asset in ipairs(assets) do
+			asset:Destroy()
+		end
+		ChangeHistoryService:SetWaypoint("Brush - After Erase")
+	end
+end
+
+function Core.replaceAt(center)
+	local radius = math.max(0.1, Utils.parseNumber(UI.C.radiusBox[1].Text, 10))
+	local assets = getAssetsInRadius(center, radius)
+
+	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
+	if not targetGroup then return end
+	local allAssets = targetGroup:GetChildren()
+	local activeAssets = {}
+	for _, asset in ipairs(allAssets) do
+		local isActive = State.assetOffsets[asset.Name .. "_active"]
+		if isActive == nil then isActive = true end
+		if isActive then table.insert(activeAssets, asset) end
+	end
+	if #activeAssets == 0 then return end
+
+	if #assets > 0 then
+		ChangeHistoryService:SetWaypoint("Brush - Before Replace")
+		for _, asset in ipairs(assets) do
+			local cf
+			if asset:IsA("Model") and asset.PrimaryPart then
+				cf = asset:GetPrimaryPartCFrame()
+			elseif asset:IsA("BasePart") then
+				cf = asset.CFrame
+			else
+				cf = asset:GetPivot()
+			end
+
+			local assetToClone = getRandomWeightedAsset(activeAssets)
+			if assetToClone then
+				local parent = asset.Parent
+				local oldName = asset.Name
+				asset:Destroy() -- Remove old
+
+				local pos = cf.Position
+				local up = cf.UpVector
+				local placedAsset = placeAsset(assetToClone, pos, up)
+				if placedAsset then 
+					placedAsset.Parent = parent 
+					-- If replacing, we might want to name it consistently or keep old name? 
+					-- Standard behavior is new name.
+				end
+			end
+		end
+		ChangeHistoryService:SetWaypoint("Brush - After Replace")
+	end
+end
+
 function Core.updateFillSelection()
 	if State.currentMode ~= "Fill" then
 		State.partToFill = nil
@@ -500,13 +708,18 @@ function Core.updateFillSelection()
 	local selection = Selection:Get()
 	if #selection == 1 and selection[1]:IsA("BasePart") then
 		State.partToFill = selection[1]
-		if not State.fillSelectionBox then
-			State.fillSelectionBox = Instance.new("SelectionBox")
-			State.fillSelectionBox.Color3 = Constants.Theme.Accent
-			State.fillSelectionBox.LineThickness = 0.1
+
+		-- Only attempt to visualize if previewFolder exists (Active)
+		if State.previewFolder then
+			if not State.fillSelectionBox then
+				State.fillSelectionBox = Instance.new("SelectionBox")
+				State.fillSelectionBox.Color3 = Constants.Theme.Accent
+				State.fillSelectionBox.LineThickness = 0.1
+			end
 			State.fillSelectionBox.Parent = State.previewFolder
+			State.fillSelectionBox.Adornee = State.partToFill
 		end
-		State.fillSelectionBox.Adornee = State.partToFill
+
 		UI.C.fillBtn[1].Text = "FILL: " .. State.partToFill.Name
 		UI.C.fillBtn[1].TextColor3 = Constants.Theme.Success
 	else
@@ -517,7 +730,166 @@ function Core.updateFillSelection()
 	end
 end
 
-function Core.clearPath() State.pathPoints = {}; State.pathPreviewFolder:ClearAllChildren() end
+function Core.paintInVolume(center)
+	local radius = math.max(0.1, Utils.parseNumber(UI.C.radiusBox[1].Text, 10))
+	local density = math.max(1, math.floor(Utils.parseNumber(UI.C.densityBox[1].Text, 10)))
+
+	ChangeHistoryService:SetWaypoint("Brush - Before Volume Paint")
+	local container = getWorkspaceContainer()
+	local groupFolder = Instance.new("Folder")
+	groupFolder.Name = "BrushVolume_" .. tostring(math.floor(os.time()))
+	groupFolder.Parent = container
+
+	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
+	if not targetGroup then groupFolder:Destroy(); return end
+	local allAssets = targetGroup:GetChildren()
+	local activeAssets = {}
+	for _, asset in ipairs(allAssets) do
+		local isActive = State.assetOffsets[asset.Name .. "_active"]
+		if isActive == nil then isActive = true end
+		if isActive then table.insert(activeAssets, asset) end
+	end
+
+	if #activeAssets > 0 then
+		for i = 1, density do
+			local assetToClone = getRandomWeightedAsset(activeAssets)
+			if assetToClone then
+				local offset = Utils.getRandomPointInSphere(radius)
+				local worldPos = center + offset
+				-- Random rotation for floating objects usually
+				local normal = Vector3.new(0, 1, 0)
+
+				local placedAsset = placeAsset(assetToClone, worldPos, normal)
+				if placedAsset then placedAsset.Parent = groupFolder end
+			end
+		end
+	end
+
+	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
+	ChangeHistoryService:SetWaypoint("Brush - After Volume Paint")
+end
+
+function Core.updatePathPreview()
+	State.pathPreviewFolder:ClearAllChildren()
+	if #State.pathPoints == 0 then return end
+
+	-- Draw Points
+	for i, pt in ipairs(State.pathPoints) do
+		local p = Instance.new("Part")
+		p.Name = "Point" .. i
+		p.Size = Vector3.new(0.5, 0.5, 0.5)
+		p.Shape = Enum.PartType.Ball
+		p.Anchored = true; p.CanCollide = false
+		p.Color = Constants.Theme.Accent
+		p.Material = Enum.Material.Neon
+		p.Position = pt
+		p.Parent = State.pathPreviewFolder
+	end
+
+	-- Draw Spline
+	if #State.pathPoints < 2 then return end
+
+	local stepsPerSegment = 10
+	for i = 1, #State.pathPoints - 1 do
+		local p0 = State.pathPoints[math.max(1, i - 1)]
+		local p1 = State.pathPoints[i]
+		local p2 = State.pathPoints[i + 1]
+		local p3 = State.pathPoints[math.min(#State.pathPoints, i + 2)]
+
+		local lastPos = p1
+		for tStep = 1, stepsPerSegment do
+			local t = tStep / stepsPerSegment
+			local nextPos = Utils.catmullRom(p0, p1, p2, p3, t)
+
+			local seg = Instance.new("Part")
+			seg.Name = "Seg"
+			seg.Anchored = true; seg.CanCollide = false
+			seg.Material = Enum.Material.Neon
+			seg.Color = Constants.Theme.Warning
+			local dist = (nextPos - lastPos).Magnitude
+			seg.Size = Vector3.new(0.1, 0.1, dist)
+			seg.CFrame = CFrame.lookAt(lastPos, nextPos) * CFrame.new(0, 0, -dist/2)
+			seg.Parent = State.pathPreviewFolder
+
+			lastPos = nextPos
+		end
+	end
+end
+
+function Core.generatePathAssets()
+	if #State.pathPoints < 2 then return end
+	local spacing = math.max(0.1, Utils.parseNumber(UI.C.spacingBox[1].Text, 1.0))
+
+	ChangeHistoryService:SetWaypoint("Brush - Before Path Gen")
+	local container = getWorkspaceContainer()
+	local groupFolder = Instance.new("Folder")
+	groupFolder.Name = "BrushPath_" .. tostring(math.floor(os.time()))
+	groupFolder.Parent = container
+
+	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
+	if not targetGroup then groupFolder:Destroy(); return end
+	local activeAssets = {}
+	for _, asset in ipairs(targetGroup:GetChildren()) do
+		local isActive = State.assetOffsets[asset.Name .. "_active"]
+		if isActive == nil then isActive = true end
+		if isActive then table.insert(activeAssets, asset) end
+	end
+
+	if #activeAssets > 0 then
+		-- Calculate rough length to prevent infinite loops or weirdness, though we iterate segments
+		for i = 1, #State.pathPoints - 1 do
+			local p0 = State.pathPoints[math.max(1, i - 1)]
+			local p1 = State.pathPoints[i]
+			local p2 = State.pathPoints[i + 1]
+			local p3 = State.pathPoints[math.min(#State.pathPoints, i + 2)]
+
+			-- Estimate segment length with a few samples
+			local segLen = 0
+			local samples = 5
+			local prevS = p1
+			for s = 1, samples do
+				local t = s / samples
+				local nextS = Utils.catmullRom(p0, p1, p2, p3, t)
+				segLen = segLen + (nextS - prevS).Magnitude
+				prevS = nextS
+			end
+
+			local count = math.floor(segLen / spacing)
+			if count < 1 then count = 1 end
+
+			for k = 0, count - 1 do -- don't double count endpoints
+				local t = k / count
+				local posOnCurve = Utils.catmullRom(p0, p1, p2, p3, t)
+
+				-- Raycast down
+				local rayOrigin = posOnCurve + Vector3.new(0, 5, 0)
+				local rayDir = Vector3.new(0, -10, 0)
+				local params = RaycastParams.new()
+				params.FilterDescendantsInstances = { State.previewFolder, container, State.pathPreviewFolder }
+				params.FilterType = Enum.RaycastFilterType.Exclude
+				local res = workspace:Raycast(rayOrigin, rayDir, params)
+
+				local targetPos = posOnCurve
+				local targetNormal = Vector3.new(0, 1, 0)
+				if res then targetPos = res.Position; targetNormal = res.Normal end
+
+				local assetToClone = getRandomWeightedAsset(activeAssets)
+				if assetToClone then
+					local placed = placeAsset(assetToClone, targetPos, targetNormal)
+					if placed then placed.Parent = groupFolder end
+				end
+			end
+		end
+	end
+
+	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
+	ChangeHistoryService:SetWaypoint("Brush - After Path Gen")
+end
+
+function Core.clearPath() 
+	State.pathPoints = {}
+	if State.pathPreviewFolder then State.pathPreviewFolder:ClearAllChildren() end
+end
 
 function Core.setMode(newMode)
 	if State.currentMode == newMode then return end
@@ -546,8 +918,8 @@ local function onMove()
 			local spacing = math.max(0.1, Utils.parseNumber(UI.C.spacingBox[1].Text, 1.0))
 			if (result.Position - State.lastPaintPosition).Magnitude >= spacing then
 				if State.currentMode == "Paint" then Core.paintAt(result.Position, result.Normal)
-					-- elseif currentMode == "Erase" then eraseAt(result.Position)
-					-- elseif currentMode == "Replace" then replaceAt(result.Position)
+				elseif State.currentMode == "Erase" then Core.eraseAt(result.Position)
+				elseif State.currentMode == "Replace" then Core.replaceAt(result.Position)
 				end
 				State.lastPaintPosition = result.Position
 			end
@@ -557,27 +929,32 @@ end
 
 local function onDown()
 	if not State.active or not State.mouse then return end
-	local center, normal, _ = Core.findSurfacePositionAndNormal()
 
 	if State.currentMode == "Volume" then
-		-- paintInVolume(pos)
+		local distance = math.max(1, Utils.parseNumber(UI.C.distanceBox[1].Text, 30))
+		local unitRay = workspace.CurrentCamera:ViewportPointToRay(State.mouse.X, State.mouse.Y)
+		local center = unitRay.Origin + unitRay.Direction * distance
+		Core.paintInVolume(center)
 		return
 	end
 
+	local center, normal, _ = Core.findSurfacePositionAndNormal()
 	if not center then return end
 
 	if State.currentMode == "Line" then
 		if not State.lineStartPoint then State.lineStartPoint = center
 		else 
-			-- paintAlongLine(State.lineStartPoint, center)
+			Core.paintAlongLine(State.lineStartPoint, center)
 			State.lineStartPoint = nil 
 		end
 	elseif State.currentMode == "Path" then
 		table.insert(State.pathPoints, center); 
-		-- updatePathPreview()
-	elseif State.currentMode == "Paint" or State.currentMode == "Stamp" then
+		Core.updatePathPreview()
+	elseif State.currentMode == "Paint" or State.currentMode == "Stamp" or State.currentMode == "Erase" or State.currentMode == "Replace" then
 		if State.currentMode == "Paint" then Core.paintAt(center, normal)
 		elseif State.currentMode == "Stamp" then Core.stampAt(center, normal)
+		elseif State.currentMode == "Erase" then Core.eraseAt(center)
+		elseif State.currentMode == "Replace" then Core.replaceAt(center)
 		end
 
 		if State.currentMode ~= "Stamp" then
@@ -595,6 +972,17 @@ end
 function Core.activate()
 	if State.active then return end
 	State.active = true
+
+	-- Re-create preview folders if missing
+	if not State.previewFolder or not State.previewFolder.Parent then
+		State.previewFolder = workspace:FindFirstChild("_BrushPreview") or Instance.new("Folder", workspace)
+		State.previewFolder.Name = "_BrushPreview"
+	end
+	if not State.pathPreviewFolder or not State.pathPreviewFolder.Parent then
+		State.pathPreviewFolder = workspace:FindFirstChild("_PathPreview") or Instance.new("Folder", workspace)
+		State.pathPreviewFolder.Name = "_PathPreview"
+	end
+
 	State.previewPart = Instance.new("Part")
 	State.previewPart.Name = "BrushRadiusPreview"
 	State.previewPart.Anchored = true; State.previewPart.CanCollide = false; State.previewPart.Transparency = 0.6; State.previewPart.Material = Enum.Material.Neon
@@ -624,7 +1012,13 @@ function Core.deactivate()
 	Core.clearPath(); State.mouse = nil
 	if State.previewPart then State.previewPart:Destroy(); State.previewPart = nil; State.cyl = nil end
 	if State.linePreviewPart then State.linePreviewPart:Destroy(); State.linePreviewPart = nil end
+	if State.ghostModel then State.ghostModel:Destroy(); State.ghostModel = nil end
 	if State.fillSelectionBox then State.fillSelectionBox.Adornee = nil end
+
+	-- Destroy folders on deactivate
+	if State.previewFolder then State.previewFolder:Destroy(); State.previewFolder = nil end
+	if State.pathPreviewFolder then State.pathPreviewFolder:Destroy(); State.pathPreviewFolder = nil end
+
 	-- toolbarBtn:SetActive(false)
 	UI.updateOnOffButtonUI()
 end
