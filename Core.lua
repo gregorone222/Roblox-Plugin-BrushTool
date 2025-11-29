@@ -108,7 +108,7 @@ local function randomizeProperties(target)
 	end
 end
 
-local function applyAssetTransform(asset, position, normal, overrideScale, overrideRotation)
+local function applyAssetTransform(asset, position, normal, overrideScale, overrideRotation, overrideWobble)
 	local s = overrideScale
 	if not s then
 		s = 1.0 
@@ -148,7 +148,8 @@ local function applyAssetTransform(asset, position, normal, overrideScale, overr
 
 	local assetName = asset.Name:gsub("^GHOST_", "")
 	local customOffset = State.assetOffsets[assetName] or 0
-	local shouldAlign = State.assetOffsets[assetName .. "_align"] or false
+	-- "Align to Surface" is now a global setting toggled in UI
+	local shouldAlign = State.alignToSurface
 
 	if asset:IsA("Model") and asset.PrimaryPart then
 		if math.abs(s - 1) > 0.0001 then Utils.scaleModel(asset, s) end
@@ -210,6 +211,15 @@ local function applyAssetTransform(asset, position, normal, overrideScale, overr
 		else
 			finalCFrame = CFrame.new(finalPosition) * randomRotation
 		end
+		-- Wobble
+		local wobble = overrideWobble
+		if not wobble and State.Wobble.Enabled then
+			local xMax = math.rad(Utils.parseNumber(UI.C.wobbleXMaxBox[1].Text, 0))
+			local zMax = math.rad(Utils.parseNumber(UI.C.wobbleZMaxBox[1].Text, 0))
+			wobble = CFrame.Angles(Utils.randFloat(-xMax, xMax), 0, Utils.randFloat(-zMax, zMax))
+		end
+		if wobble then finalCFrame = finalCFrame * wobble end
+
 		asset:SetPrimaryPartCFrame(finalCFrame)
 
 	elseif asset:IsA("BasePart") then
@@ -247,18 +257,61 @@ local function applyAssetTransform(asset, position, normal, overrideScale, overr
 		else
 			finalCFrame = CFrame.new(finalPos) * randomRotation
 		end
+		-- Wobble
+		local wobble = overrideWobble
+		if not wobble and State.Wobble.Enabled then
+			local xMax = math.rad(Utils.parseNumber(UI.C.wobbleXMaxBox[1].Text, 0))
+			local zMax = math.rad(Utils.parseNumber(UI.C.wobbleZMaxBox[1].Text, 0))
+			wobble = CFrame.Angles(Utils.randFloat(-xMax, xMax), 0, Utils.randFloat(-zMax, zMax))
+		end
+		if wobble then finalCFrame = finalCFrame * wobble end
+
 		asset.CFrame = finalCFrame
 	end
 	return asset
 end
 
-local function placeAsset(assetToClone, position, normal, overrideScale, overrideRotation)
+local function animateAssetSpawn(model)
+	-- Helper to animate asset spawning (Pop effect)
+	-- Use ScaleTo to scale relative to the model's original scale.
+	-- If 'applyAssetTransform' already manipulated the parts' sizes directly,
+	-- Model:ScaleTo(1.0) sets it to 100% of its *current geometry size*.
+
+	local scaleValue = Instance.new("NumberValue")
+	scaleValue.Value = 0.01 -- Start tiny
+
+	-- Initialize model at small scale immediately (sync)
+	model:ScaleTo(0.01)
+
+	local tw = game:GetService("TweenService"):Create(scaleValue, TweenInfo.new(0.5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {Value = 1})
+
+	local conn
+	conn = scaleValue.Changed:Connect(function(val)
+		-- Safety check: use pcall in case model is destroyed mid-tween
+		pcall(function()
+			model:ScaleTo(val)
+		end)
+	end)
+
+	tw.Completed:Connect(function()
+		conn:Disconnect()
+		scaleValue:Destroy()
+	end)
+
+	tw:Play()
+end
+
+local function placeAsset(assetToClone, position, normal, overrideScale, overrideRotation, overrideWobble)
 	local clone = assetToClone:Clone()
 	randomizeProperties(clone)
 	if clone:IsA("Model") and not clone.PrimaryPart then
 		for _, v in ipairs(clone:GetDescendants()) do if v:IsA("BasePart") then clone.PrimaryPart = v; break end end
 	end
-	applyAssetTransform(clone, position, normal, overrideScale, overrideRotation)
+	applyAssetTransform(clone, position, normal, overrideScale, overrideRotation, overrideWobble)
+
+	-- Trigger Juice immediately (sync) so it starts small before being parented
+	animateAssetSpawn(clone)
+
 	return clone
 end
 
@@ -325,6 +378,12 @@ function Core.updateGhostPreview(position, normal)
 		State.nextStampRotation = CFrame.Angles(xrot, yrot, zrot)
 	end
 
+	if State.Wobble.Enabled and not State.nextStampWobble then
+		local xMax = math.rad(Utils.parseNumber(UI.C.wobbleXMaxBox[1].Text, 0))
+		local zMax = math.rad(Utils.parseNumber(UI.C.wobbleZMaxBox[1].Text, 0))
+		State.nextStampWobble = CFrame.Angles(Utils.randFloat(-xMax, xMax), 0, Utils.randFloat(-zMax, zMax))
+	end
+
 	if State.ghostModel then State.ghostModel:Destroy() end
 
 	State.ghostModel = State.nextStampAsset:Clone()
@@ -341,21 +400,64 @@ function Core.updateGhostPreview(position, normal)
 		table.insert(partsToStyle, State.ghostModel)
 	end
 
+	-- Calculate Color/Transparency random shifts once per "Stamp cycle" to avoid flickering
+	if State.Randomizer.Transparency.Enabled and not State.nextStampTransparencyShift then
+		local tmin = Utils.parseNumber(UI.C.transMinBox[1].Text, 0)
+		local tmax = Utils.parseNumber(UI.C.transMaxBox[1].Text, 0)
+		State.nextStampTransparencyShift = Utils.randFloat(tmin, tmax)
+	end
+
+	if State.Randomizer.Color.Enabled and not State.nextStampColorShift then
+		local hmin = Utils.parseNumber(UI.C.hueMinBox[1].Text, 0)
+		local hmax = Utils.parseNumber(UI.C.hueMaxBox[1].Text, 0)
+		local smin = Utils.parseNumber(UI.C.satMinBox[1].Text, 0)
+		local smax = Utils.parseNumber(UI.C.satMaxBox[1].Text, 0)
+		local vmin = Utils.parseNumber(UI.C.valMinBox[1].Text, 0)
+		local vmax = Utils.parseNumber(UI.C.valMaxBox[1].Text, 0)
+		State.nextStampColorShift = {
+			h = Utils.randFloat(hmin, hmax),
+			s = Utils.randFloat(smin, smax),
+			v = Utils.randFloat(vmin, vmax)
+		}
+	end
+
 	for _, desc in ipairs(partsToStyle) do
 		if desc:IsA("BasePart") then
-			desc.Transparency = State.ghostTransparency
 			desc.CastShadow = false
 			desc.CanCollide = false
 			desc.Anchored = true
 			desc.Material = Enum.Material.ForceField
-			desc.Color = Constants.Theme.Accent
+
+			if State.Randomizer.Transparency.Enabled then
+				-- Assuming ghostModel was freshly cloned from source asset, 
+				-- desc.Transparency is the original asset transparency.
+				-- We add the shift to it.
+				local shift = State.nextStampTransparencyShift or 0
+				desc.Transparency = math.clamp(desc.Transparency + shift, 0, 1)
+			else
+				desc.Transparency = State.ghostTransparency
+			end
+
+			if State.Randomizer.Color.Enabled then
+				-- Since we re-clone the ghost model every update (lines 313-315), 
+				-- desc.Color is always the original asset color.
+				-- We can safely apply the shift without accumulation.
+				local shift = State.nextStampColorShift or {h=0,s=0,v=0}
+				local h, s, v = desc.Color:ToHSV()
+				h = (h + shift.h) % 1
+				s = math.clamp(s + shift.s, 0, 1)
+				v = math.clamp(v + shift.v, 0, 1)
+				desc.Color = Color3.fromHSV(h, s, v)
+			else
+				desc.Color = Constants.Theme.Accent
+			end
 		elseif desc:IsA("Decal") or desc:IsA("Texture") then
 			desc:Destroy()
 		end
 	end
 
 	State.ghostModel.Parent = State.previewFolder
-	applyAssetTransform(State.ghostModel, position, normal, State.nextStampScale, State.nextStampRotation)
+	applyAssetTransform(State.ghostModel, position, normal, State.nextStampScale, State.nextStampRotation, State.nextStampWobble)
 end
 
 function Core.updatePreview()
@@ -511,12 +613,15 @@ function Core.stampAt(center, surfaceNormal)
 
 	local assetToPlace = State.nextStampAsset or getRandomWeightedAsset(activeAssets)
 	if assetToPlace then
-		local placedAsset = placeAsset(assetToPlace, center, surfaceNormal, State.nextStampScale, State.nextStampRotation)
+		local placedAsset = placeAsset(assetToPlace, center, surfaceNormal, State.nextStampScale, State.nextStampRotation, State.nextStampWobble)
 		if placedAsset then placedAsset.Parent = groupFolder end
 	end
 	State.nextStampAsset = nil 
 	State.nextStampScale = nil
 	State.nextStampRotation = nil
+	State.nextStampColorShift = nil
+	State.nextStampTransparencyShift = nil
+	State.nextStampWobble = nil
 	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
 	ChangeHistoryService:SetWaypoint("Brush - After Stamp")
 end
