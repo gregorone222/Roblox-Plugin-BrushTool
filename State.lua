@@ -30,6 +30,37 @@ State.isGroupListView = false
 State.ghostTransparency = 0.65
 State.alignToSurface = false
 
+-- Material Filter State
+State.MaterialFilter = {
+	Enabled = false,
+	Whitelist = {}
+}
+
+-- Slope Filter State
+State.SlopeFilter = {
+	Enabled = false,
+	MinAngle = 0,
+	MaxAngle = 45
+}
+
+-- Height Filter State
+State.HeightFilter = {
+	Enabled = false,
+	MinHeight = -500,
+	MaxHeight = 500
+}
+
+-- Physics Drop State
+State.PhysicsDrop = {
+	Enabled = false,
+	Duration = 1.0
+}
+
+-- Smart Eraser/Replacer State
+State.SmartEraser = {
+	FilterMode = "All" -- "All" or "CurrentGroup"
+}
+
 -- Preview Objects (Will be set by Core)
 State.previewPart = nil
 State.cyl = nil
