@@ -28,6 +28,7 @@ State.smartSnapEnabled = false
 State.currentAssetGroup = "Default"
 State.isGroupListView = false
 State.ghostTransparency = 0.65
+State.alignToSurface = false
 
 -- Preview Objects (Will be set by Core)
 State.previewPart = nil
@@ -49,10 +50,13 @@ State.Randomizer = {
 	Transparency = { Enabled = false }
 }
 
+State.Wobble = { Enabled = false }
+
 -- Next Stamp State
 State.nextStampAsset = nil
 State.nextStampScale = nil
 State.nextStampRotation = nil
+State.nextStampWobble = nil
 
 function State.init(pPlugin, pConstants)
 	pluginInstance = pPlugin
@@ -66,12 +70,21 @@ function State.init(pPlugin, pConstants)
 		State.assetsFolder.Parent = ServerStorage
 	end
 
+	-- Ensure Default group exists
+	if not State.assetsFolder:FindFirstChild("Default") then
+		local defaultGroup = Instance.new("Folder")
+		defaultGroup.Name = "Default"
+		defaultGroup.Parent = State.assetsFolder
+	end
+
 	-- Global Preview Folders
 	State.previewFolder = workspace:FindFirstChild("_BrushPreview") or Instance.new("Folder", workspace)
 	State.previewFolder.Name = "_BrushPreview"
 
 	State.pathPreviewFolder = workspace:FindFirstChild("_PathPreview") or Instance.new("Folder", workspace)
 	State.pathPreviewFolder.Name = "_PathPreview"
+
+	State.currentMode = "Paint" -- Ensure default mode is Paint explicitly on init
 
 	State.loadOffsets()
 	State.loadPresetsFromStorage()
