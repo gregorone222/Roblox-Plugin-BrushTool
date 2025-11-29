@@ -64,6 +64,28 @@ local function createTechButton(text, parent)
 			btn.TextColor3 = Theme.Text
 		end
 	end)
+	btn.MouseButton1Down:Connect(function()
+		if not btn.Active then return end
+		if btn:GetAttribute("IsSelected") then
+			stroke.Color = Theme.Accent
+			btn.BackgroundColor3 = Theme.Accent
+		else
+			stroke.Color = Theme.AccentHover
+			btn.BackgroundColor3 = Theme.Border
+			btn.TextColor3 = Theme.Accent
+		end
+	end)
+	btn.MouseButton1Up:Connect(function()
+		if not btn.Active then return end
+		if btn:GetAttribute("IsSelected") then
+			stroke.Color = Theme.AccentHover
+			btn.BackgroundColor3 = Theme.AccentHover
+		else
+			stroke.Color = Theme.Accent
+			btn.BackgroundColor3 = Theme.Panel
+			btn.TextColor3 = Theme.Accent
+		end
+	end)
 	return btn, stroke
 end
 
@@ -211,6 +233,8 @@ local function createTab(name, label, tabBar, tabContent)
 	local frame = Instance.new("ScrollingFrame")
 	frame.Name = name .. "Frame"
 	frame.Size = UDim2.new(1, 0, 1, 0)
+	frame.CanvasSize = UDim2.new(0, 0, 0, 0)
+	frame.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	frame.BackgroundTransparency = 1
 	frame.ScrollBarThickness = 4
 	frame.ScrollBarImageColor3 = Theme.Border
@@ -287,6 +311,10 @@ function UI.init(plugin, pState, pConstants, pUtils)
 	UI.widget.Title = "BRUSH TOOL // PROTOCOL"
 
 	UI.buildInterface()
+	UI.updateAllToggles()
+	UI.updateModeButtonsUI()
+	UI.updateGroupUI()
+	UI.updateAssetUIList()
 end
 
 function UI.setCore(pCore)
@@ -617,6 +645,11 @@ function UI.buildInterface()
 	UI.C.transMinBox = {createTechInput("TRNS MIN", "0", UI.C.transparencyGrid)}
 	UI.C.transMaxBox = {createTechInput("TRNS MAX", "0", UI.C.transparencyGrid)}
 
+	-- Wobble
+	UI.C.randomizeWobbleToggle, UI.C.wobbleGrid, UI.C.randomizeWobbleBtn = createOrderedRandomizerGroup(TabTuning.frame, "Wobble (Tilt)")
+	UI.C.wobbleXMaxBox = {createTechInput("X ANGLE (Deg)", "0", UI.C.wobbleGrid)}
+	UI.C.wobbleZMaxBox = {createTechInput("Z ANGLE (Deg)", "0", UI.C.wobbleGrid)}
+
 	createOrderedSectionHeader("ENVIRONMENT CONTROL", TabTuning.frame)
 	UI.C.smartSnapBtn = {createTechToggle("Smart Surface Snap", TabTuning.frame)}
 	UI.C.smartSnapBtn[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
@@ -634,12 +667,8 @@ function UI.buildInterface()
 	UI.C.assetSettingsAlign[2].LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
 
 	UI.C.assetSettingsAlign[1].MouseButton1Click:Connect(function()
-		if State.selectedAssetInUI then
-			local key = State.selectedAssetInUI .. "_align"
-			State.assetOffsets[key] = not State.assetOffsets[key]
-			State.persistOffsets()
-			UI.updateAllToggles()
-		end
+		State.alignToSurface = not State.alignToSurface
+		UI.updateAllToggles()
 	end)
 
 	local surfaceGrid = Instance.new("Frame")
@@ -685,24 +714,84 @@ function UI.buildInterface()
 	end)
 
 	-- Randomizers
-	local function bindRandomizer(toggleGroup, btnGroup, stateKey)
+	local function bindRandomizer(toggleGroup, btnGroup, stateKey, randomizeAction)
 		toggleGroup[1].MouseButton1Click:Connect(function()
-			State.Randomizer[stateKey].Enabled = not State.Randomizer[stateKey].Enabled
+			if stateKey == "Wobble" then
+				State.Wobble.Enabled = not State.Wobble.Enabled
+			else
+				State.Randomizer[stateKey].Enabled = not State.Randomizer[stateKey].Enabled
+			end
 			UI.updateAllToggles()
 		end)
 		btnGroup[1].MouseButton1Click:Connect(function()
-			if not State.Randomizer[stateKey].Enabled then return end
+			local enabled = false
+			if stateKey == "Wobble" then enabled = State.Wobble.Enabled
+			else enabled = State.Randomizer[stateKey].Enabled end
+
+			if not enabled then return end
+
+			-- Execute specific randomization action (filling inputs with random numbers)
+			if randomizeAction then randomizeAction() end
+
 			-- Force new randomization
 			State.nextStampScale = nil
 			State.nextStampRotation = nil
+			State.nextStampColorShift = nil
+			State.nextStampTransparencyShift = nil
+			State.nextStampWobble = nil
 			if Core then Core.updatePreview() end
 		end)
 	end
 
-	bindRandomizer(UI.C.randomizeScaleToggle, UI.C.randomizeScaleBtn, "Scale")
-	bindRandomizer(UI.C.randomizeRotationToggle, UI.C.randomizeRotationBtn, "Rotation")
-	bindRandomizer(UI.C.randomizeColorToggle, UI.C.randomizeColorBtn, "Color")
-	bindRandomizer(UI.C.randomizeTransparencyToggle, UI.C.randomizeTransparencyBtn, "Transparency")
+	bindRandomizer(UI.C.randomizeScaleToggle, UI.C.randomizeScaleBtn, "Scale", function()
+		-- Randomize Scale Min/Max (0.5 to 1.5 range typically)
+		local minVal = math.floor((0.5 + math.random() * 0.4) * 10) / 10 -- 0.5 to 0.9
+		local maxVal = math.floor((minVal + 0.1 + math.random() * 0.5) * 10) / 10 -- minVal+0.1 to minVal+0.6
+		UI.C.scaleMinBox[1].Text = tostring(minVal)
+		UI.C.scaleMaxBox[1].Text = tostring(maxVal)
+	end)
+
+	bindRandomizer(UI.C.randomizeRotationToggle, UI.C.randomizeRotationBtn, "Rotation", function()
+		-- Randomize Rotation Limits (-45 to 45 deg range typically)
+		local limit = math.random(5, 45)
+		UI.C.rotXMinBox[1].Text = tostring(-limit)
+		UI.C.rotXMaxBox[1].Text = tostring(limit)
+
+		limit = math.random(5, 45)
+		UI.C.rotZMinBox[1].Text = tostring(-limit)
+		UI.C.rotZMaxBox[1].Text = tostring(limit)
+	end)
+
+	bindRandomizer(UI.C.randomizeColorToggle, UI.C.randomizeColorBtn, "Color", function()
+		-- Randomize Color Shifts (Small jitter)
+		-- Hue
+		local hRange = math.random() * 0.1
+		UI.C.hueMinBox[1].Text = string.format("%.2f", -hRange/2)
+		UI.C.hueMaxBox[1].Text = string.format("%.2f", hRange/2)
+		-- Sat
+		local sRange = math.random() * 0.2
+		UI.C.satMinBox[1].Text = string.format("%.2f", -sRange/2)
+		UI.C.satMaxBox[1].Text = string.format("%.2f", sRange/2)
+		-- Val
+		local vRange = math.random() * 0.2
+		UI.C.valMinBox[1].Text = string.format("%.2f", -vRange/2)
+		UI.C.valMaxBox[1].Text = string.format("%.2f", vRange/2)
+	end)
+
+	bindRandomizer(UI.C.randomizeTransparencyToggle, UI.C.randomizeTransparencyBtn, "Transparency", function()
+		-- Randomize Transparency Range
+		local minVal = math.floor((math.random() * 0.3) * 100) / 100 -- 0 to 0.3
+		local maxVal = math.floor((minVal + math.random() * 0.4) * 100) / 100 -- min to min+0.4
+		UI.C.transMinBox[1].Text = tostring(minVal)
+		UI.C.transMaxBox[1].Text = tostring(maxVal)
+	end)
+
+	bindRandomizer(UI.C.randomizeWobbleToggle, UI.C.randomizeWobbleBtn, "Wobble", function()
+		local xMax = math.random(5, 30)
+		local zMax = math.random(5, 30)
+		UI.C.wobbleXMaxBox[1].Text = tostring(xMax)
+		UI.C.wobbleZMaxBox[1].Text = tostring(zMax)
+	end)
 
 	switchTab("Tools")
 end
@@ -803,14 +892,12 @@ function UI.updateGroupUI()
 end
 
 function UI.updateAllToggles()
-	local alignState = false
 	local activeState = false
 	if State.selectedAssetInUI then
-		alignState = State.assetOffsets[State.selectedAssetInUI .. "_align"]
 		activeState = State.assetOffsets[State.selectedAssetInUI .. "_active"] ~= false
 	end
 
-	updateToggle(UI.C.assetSettingsAlign[1], UI.C.assetSettingsAlign[2], UI.C.assetSettingsAlign[3], alignState)
+	updateToggle(UI.C.assetSettingsAlign[1], UI.C.assetSettingsAlign[2], UI.C.assetSettingsAlign[3], State.alignToSurface)
 	updateToggle(UI.C.assetSettingsActive[1], UI.C.assetSettingsActive[2], UI.C.assetSettingsActive[3], activeState)
 
 	updateToggle(UI.C.smartSnapBtn[1], UI.C.smartSnapBtn[2], UI.C.smartSnapBtn[3], State.smartSnapEnabled)
@@ -825,6 +912,9 @@ function UI.updateAllToggles()
 	updateInputGroupEnabled(UI.C.rotationGrid, State.Randomizer.Rotation.Enabled, UI.C.randomizeRotationBtn)
 	updateInputGroupEnabled(UI.C.colorGrid, State.Randomizer.Color.Enabled, UI.C.randomizeColorBtn)
 	updateInputGroupEnabled(UI.C.transparencyGrid, State.Randomizer.Transparency.Enabled, UI.C.randomizeTransparencyBtn)
+
+	updateToggle(UI.C.randomizeWobbleToggle[1], UI.C.randomizeWobbleToggle[2], UI.C.randomizeWobbleToggle[3], State.Wobble.Enabled)
+	updateInputGroupEnabled(UI.C.wobbleGrid, State.Wobble.Enabled, UI.C.randomizeWobbleBtn)
 
 	for mode, controls in pairs(UI.C.surfaceButtons) do
 		local isSelected = (mode == State.surfaceAngleMode)
