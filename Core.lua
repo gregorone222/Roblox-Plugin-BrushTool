@@ -29,6 +29,26 @@ local function getWorkspaceContainer()
 	return container
 end
 
+function Core.isMaterialAllowed(material)
+	if not State.MaterialFilter.Enabled then return true end
+	return State.MaterialFilter.Whitelist[material] == true
+end
+
+function Core.isSlopeAllowed(normal)
+	if not State.SlopeFilter.Enabled then return true end
+	-- Calculate angle between normal and UP (0,1,0)
+	-- Dot Product: A . B = |A||B| cos(theta)
+	-- Since both are unit vectors (mostly), theta = acos(A . B)
+	local dot = math.clamp(normal:Dot(Vector3.new(0, 1, 0)), -1, 1)
+	local angle = math.deg(math.acos(dot))
+	return angle >= State.SlopeFilter.MinAngle and angle <= State.SlopeFilter.MaxAngle
+end
+
+function Core.isHeightAllowed(position)
+	if not State.HeightFilter.Enabled then return true end
+	return position.Y >= State.HeightFilter.MinHeight and position.Y <= State.HeightFilter.MaxHeight
+end
+
 local function getRandomWeightedAsset(assetList)
 	local totalWeight = 0
 	for _, asset in ipairs(assetList) do
@@ -307,7 +327,56 @@ local function placeAsset(assetToClone, position, normal, overrideScale, overrid
 	if clone:IsA("Model") and not clone.PrimaryPart then
 		for _, v in ipairs(clone:GetDescendants()) do if v:IsA("BasePart") then clone.PrimaryPart = v; break end end
 	end
-	applyAssetTransform(clone, position, normal, overrideScale, overrideRotation, overrideWobble)
+
+	-- Physics Drop Logic
+	if State.PhysicsDrop.Enabled then
+		-- Spawn higher for drop
+		local dropHeight = 2.0 -- Studs
+		local targetPos = position
+
+		-- Use existing transform logic but override position locally if needed, 
+		-- but applyAssetTransform sets the CFrame directly.
+		-- We need to let applyAssetTransform do its thing, then offset it, or pass offset position.
+
+		-- Let's pass the drop position to applyAssetTransform
+		applyAssetTransform(clone, position + (normal * dropHeight), normal, overrideScale, overrideRotation, overrideWobble)
+
+		-- Unanchor descendants for physics
+		for _, desc in ipairs(clone:GetDescendants()) do
+			if desc:IsA("BasePart") then
+				desc.Anchored = false
+				desc.CanCollide = true
+			end
+		end
+		if clone:IsA("BasePart") then
+			clone.Anchored = false
+			clone.CanCollide = true
+		end
+
+		-- Schedule freezing
+		task.delay(State.PhysicsDrop.Duration, function()
+			if clone and clone.Parent then
+				if clone:IsA("Model") then
+					for _, d in ipairs(clone:GetDescendants()) do
+						if d:IsA("BasePart") then 
+							d.Anchored = true 
+							d.CanCollide = false -- Revert to decorative collision usually, or keep true? 
+							-- Standard brush behavior is usually CanCollide false for scattering debris, 
+							-- but if it's a big rock, maybe true. Let's stick to Anchored=true.
+							-- For now we leave CanCollide as is (true) so players can walk on it, or false?
+							-- Existing logic in updateGhostPreview sets CanCollide=false for ghost.
+							-- Real assets usually inherit their source properties.
+							-- Let's just Anchor it.
+						end
+					end
+				elseif clone:IsA("BasePart") then
+					clone.Anchored = true
+				end
+			end
+		end)
+	else
+		applyAssetTransform(clone, position, normal, overrideScale, overrideRotation, overrideWobble)
+	end
 
 	-- Trigger Juice immediately (sync) so it starts small before being parented
 	animateAssetSpawn(clone)
@@ -327,9 +396,9 @@ function Core.findSurfacePositionAndNormal()
 		if State.surfaceAngleMode == "Floor" and result.Normal.Y < 0.7 then return nil, nil, nil
 		elseif State.surfaceAngleMode == "Wall" and math.abs(result.Normal.Y) > 0.3 then return nil, nil, nil
 		elseif State.surfaceAngleMode == "Ceiling" and result.Normal.Y > -0.7 then return nil, nil, nil end
-		return result.Position, result.Normal, result.Instance
+		return result.Position, result.Normal, result.Instance, result.Material
 	end
-	return nil, nil, nil
+	return nil, nil, nil, nil
 end
 
 -- Business Logic Functions
@@ -578,10 +647,12 @@ function Core.paintAt(center, surfaceNormal)
 			params.FilterDescendantsInstances = { State.previewFolder, container }; params.FilterType = Enum.RaycastFilterType.Exclude
 			local result = workspace:Raycast(rayOrigin, rayDir, params)
 			if result and result.Instance then
-				local posOnSurface = result.Position
-				local ok = true
-				for _, p in ipairs(placed) do if (p - posOnSurface).Magnitude < spacing then ok = false; break end end
-				if ok then found = true; candidatePos = posOnSurface; candidateNormal = result.Normal end
+				if Core.isMaterialAllowed(result.Material) and Core.isSlopeAllowed(result.Normal) and Core.isHeightAllowed(result.Position) then
+					local posOnSurface = result.Position
+					local ok = true
+					for _, p in ipairs(placed) do if (p - posOnSurface).Magnitude < spacing then ok = false; break end end
+					if ok then found = true; candidatePos = posOnSurface; candidateNormal = result.Normal end
+				end
 			end
 		end
 		if candidatePos then
@@ -595,6 +666,17 @@ function Core.paintAt(center, surfaceNormal)
 end
 
 function Core.stampAt(center, surfaceNormal)
+	-- center and surfaceNormal are passed from onDown which calls findSurfacePositionAndNormal
+	-- But we need the Material, so we might need to re-find or rely on what's passed.
+	-- Core.findSurfacePositionAndNormal() relies on Mouse position.
+
+	local pos, norm, _, mat = Core.findSurfacePositionAndNormal()
+
+	if not pos then return end -- Safety check if aiming at void
+	if not Core.isMaterialAllowed(mat) then return end
+	if not Core.isSlopeAllowed(norm) then return end
+	if not Core.isHeightAllowed(pos) then return end
+
 	ChangeHistoryService:SetWaypoint("Brush - Before Stamp")
 	local container = getWorkspaceContainer()
 	local groupFolder = Instance.new("Folder"); groupFolder.Name = "BrushStamp_" .. tostring(math.floor(os.time())); groupFolder.Parent = container
@@ -673,19 +755,27 @@ function Core.paintAlongLine(startPos, endPos)
 			local result = workspace:Raycast(rayOrigin, rayDir, params)
 			local targetPos = pointOnLine
 			local targetNormal = Vector3.new(0, 1, 0)
+			local validSurface = true
 
 			if result then
 				targetPos = result.Position
 				targetNormal = result.Normal
+				if not Core.isMaterialAllowed(result.Material) then validSurface = false end
+				if not Core.isSlopeAllowed(result.Normal) then validSurface = false end
 			else
 				-- If no surface found directly below, try raycasting towards the line end point normal if available?
 				-- Fallback: just place on the line in air
 			end
 
-			local assetToClone = getRandomWeightedAsset(activeAssets)
-			if assetToClone then
-				local placedAsset = placeAsset(assetToClone, targetPos, targetNormal)
-				if placedAsset then placedAsset.Parent = groupFolder end
+			-- Height check applies to final position regardless of surface hit
+			if not Core.isHeightAllowed(targetPos) then validSurface = false end
+
+			if validSurface then
+				local assetToClone = getRandomWeightedAsset(activeAssets)
+				if assetToClone then
+					local placedAsset = placeAsset(assetToClone, targetPos, targetNormal)
+					if placedAsset then placedAsset.Parent = groupFolder end
+				end
 			end
 
 			if count == 0 then break end
@@ -749,7 +839,20 @@ function Core.eraseAt(center)
 	if #assets > 0 then
 		ChangeHistoryService:SetWaypoint("Brush - Before Erase")
 		for _, asset in ipairs(assets) do
-			asset:Destroy()
+			local shouldErase = true
+			if State.SmartEraser.FilterMode == "CurrentGroup" then
+				local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
+				if targetGroup then
+					-- Check if asset name exists in the current group
+					if not targetGroup:FindFirstChild(asset.Name) then
+						shouldErase = false
+					end
+				end
+			end
+
+			if shouldErase then
+				asset:Destroy()
+			end
 		end
 		ChangeHistoryService:SetWaypoint("Brush - After Erase")
 	end
@@ -773,28 +876,37 @@ function Core.replaceAt(center)
 	if #assets > 0 then
 		ChangeHistoryService:SetWaypoint("Brush - Before Replace")
 		for _, asset in ipairs(assets) do
-			local cf
-			if asset:IsA("Model") and asset.PrimaryPart then
-				cf = asset:GetPrimaryPartCFrame()
-			elseif asset:IsA("BasePart") then
-				cf = asset.CFrame
-			else
-				cf = asset:GetPivot()
+			local shouldReplace = true
+			if State.SmartEraser.FilterMode == "CurrentGroup" then
+				if not targetGroup:FindFirstChild(asset.Name) then
+					shouldReplace = false
+				end
 			end
 
-			local assetToClone = getRandomWeightedAsset(activeAssets)
-			if assetToClone then
-				local parent = asset.Parent
-				local oldName = asset.Name
-				asset:Destroy() -- Remove old
+			if shouldReplace then
+				local cf
+				if asset:IsA("Model") and asset.PrimaryPart then
+					cf = asset:GetPrimaryPartCFrame()
+				elseif asset:IsA("BasePart") then
+					cf = asset.CFrame
+				else
+					cf = asset:GetPivot()
+				end
 
-				local pos = cf.Position
-				local up = cf.UpVector
-				local placedAsset = placeAsset(assetToClone, pos, up)
-				if placedAsset then 
-					placedAsset.Parent = parent 
-					-- If replacing, we might want to name it consistently or keep old name? 
-					-- Standard behavior is new name.
+				local assetToClone = getRandomWeightedAsset(activeAssets)
+				if assetToClone then
+					local parent = asset.Parent
+					local oldName = asset.Name
+					asset:Destroy() -- Remove old
+
+					local pos = cf.Position
+					local up = cf.UpVector
+					local placedAsset = placeAsset(assetToClone, pos, up)
+					if placedAsset then 
+						placedAsset.Parent = parent 
+						-- If replacing, we might want to name it consistently or keep old name? 
+						-- Standard behavior is new name.
+					end
 				end
 			end
 		end
@@ -976,12 +1088,23 @@ function Core.generatePathAssets()
 
 				local targetPos = posOnCurve
 				local targetNormal = Vector3.new(0, 1, 0)
-				if res then targetPos = res.Position; targetNormal = res.Normal end
+				local validSurface = true
 
-				local assetToClone = getRandomWeightedAsset(activeAssets)
-				if assetToClone then
-					local placed = placeAsset(assetToClone, targetPos, targetNormal)
-					if placed then placed.Parent = groupFolder end
+				if res then 
+					targetPos = res.Position; targetNormal = res.Normal 
+					if not Core.isMaterialAllowed(res.Material) then validSurface = false end
+					if not Core.isSlopeAllowed(res.Normal) then validSurface = false end
+				end
+
+				-- Height check applies to final position regardless of surface hit
+				if not Core.isHeightAllowed(targetPos) then validSurface = false end
+
+				if validSurface then
+					local assetToClone = getRandomWeightedAsset(activeAssets)
+					if assetToClone then
+						local placed = placeAsset(assetToClone, targetPos, targetNormal)
+						if placed then placed.Parent = groupFolder end
+					end
 				end
 			end
 		end
