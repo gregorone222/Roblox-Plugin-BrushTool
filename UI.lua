@@ -10,6 +10,45 @@ UI.allTabs = {}
 
 local Theme -- Shortcut
 
+local function updateToggle(btn, inner, label, state, activeText, inactiveText)
+	inner.Visible = state
+	if state then
+		inner.BackgroundColor3 = Theme.Accent
+		if activeText then label.Text = activeText end
+	else
+		if inactiveText then label.Text = inactiveText end
+	end
+end
+
+local function updateInputGroupEnabled(grid, enabled, randomizeBtn)
+	for _, child in ipairs(grid:GetChildren()) do
+		if child:IsA("Frame") and child:FindFirstChildOfClass("TextBox") then
+			local inputBox = child:FindFirstChildOfClass("TextBox")
+			inputBox.TextEditable = enabled
+			if enabled then
+				inputBox.TextColor3 = Theme.Accent
+				child:FindFirstChildOfClass("TextLabel").TextColor3 = Theme.TextDim
+			else
+				inputBox.TextColor3 = Theme.TextDim
+				child:FindFirstChildOfClass("TextLabel").TextColor3 = Color3.fromHex("505050")
+			end
+		end
+	end
+	if randomizeBtn then
+		randomizeBtn[1].Active = enabled
+		pcall(function() randomizeBtn[1].Interactable = enabled end)
+		if enabled then
+			randomizeBtn[2].Color = Theme.Border
+			randomizeBtn[1].TextColor3 = Theme.Text
+			randomizeBtn[1].TextTransparency = 0
+		else
+			randomizeBtn[2].Color = Color3.fromHex("2a2a2a")
+			randomizeBtn[1].TextColor3 = Theme.TextDim
+			randomizeBtn[1].TextTransparency = 0.5
+		end
+	end
+end
+
 local function createTechFrame(parent, size)
 	local f = Instance.new("Frame")
 	f.Size = size
@@ -466,6 +505,26 @@ function UI.buildInterface()
 	UI.C.fillFrame.Parent = UI.C.contextContainer
 	UI.C.fillBtn = {createTechButton("SELECT TARGET VOLUME", UI.C.fillFrame)}
 
+	-- Eraser Context
+	UI.C.eraserFrame = Instance.new("Frame")
+	UI.C.eraserFrame.AutomaticSize = Enum.AutomaticSize.Y
+	UI.C.eraserFrame.Size = UDim2.new(1, 0, 0, 0)
+	UI.C.eraserFrame.BackgroundTransparency = 1
+	UI.C.eraserFrame.Visible = false
+	UI.C.eraserFrame.Parent = UI.C.contextContainer
+
+	UI.C.eraserFilterBtn = {createTechToggle("Filter: Everything", UI.C.eraserFrame)}
+
+	UI.C.eraserFilterBtn[1].MouseButton1Click:Connect(function()
+		if State.SmartEraser.FilterMode == "All" then
+			State.SmartEraser.FilterMode = "CurrentGroup"
+			updateToggle(UI.C.eraserFilterBtn[1], UI.C.eraserFilterBtn[2], UI.C.eraserFilterBtn[3], true, "Filter: Current Group", "Filter: Everything")
+		else
+			State.SmartEraser.FilterMode = "All"
+			updateToggle(UI.C.eraserFilterBtn[1], UI.C.eraserFilterBtn[2], UI.C.eraserFilterBtn[3], false, "Filter: Current Group", "Filter: Everything")
+		end
+	end)
+
 	-- ASSETS TAB
 	createSectionHeader("ASSET GROUPS", TabAssets.frame)
 	local groupActions = Instance.new("Frame")
@@ -692,6 +751,234 @@ function UI.buildInterface()
 		end)
 	end
 
+	-- MATERIAL FILTER UI
+	createOrderedSectionHeader("SURFACE MATERIAL FILTER", TabTuning.frame)
+	UI.C.materialFilterToggle = {createTechToggle("Enable Material Filter", TabTuning.frame)}
+	UI.C.materialFilterToggle[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+
+	UI.C.materialFilterToggle[1].MouseButton1Click:Connect(function()
+		State.MaterialFilter.Enabled = not State.MaterialFilter.Enabled
+		UI.updateAllToggles()
+	end)
+
+	local matFilterContainer = Instance.new("Frame")
+	matFilterContainer.Size = UDim2.new(1, 0, 0, 160)
+	matFilterContainer.BackgroundTransparency = 1
+	matFilterContainer.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+	matFilterContainer.Parent = TabTuning.frame
+
+	local mfTools = Instance.new("Frame")
+	mfTools.Size = UDim2.new(1, 0, 0, 24)
+	mfTools.BackgroundTransparency = 1
+	mfTools.Parent = matFilterContainer
+
+	local mfToolsLayout = Instance.new("UIListLayout")
+	mfToolsLayout.FillDirection = Enum.FillDirection.Horizontal
+	mfToolsLayout.Padding = UDim.new(0, 8)
+	mfToolsLayout.Parent = mfTools
+
+	local selectAllMat = Instance.new("TextButton")
+	selectAllMat.Size = UDim2.new(0.5, -4, 1, 0)
+	selectAllMat.BackgroundColor3 = Theme.Panel
+	selectAllMat.Text = "SELECT ALL"
+	selectAllMat.Font = Theme.FontTech
+	selectAllMat.TextSize = 10
+	selectAllMat.TextColor3 = Theme.Text
+	selectAllMat.Parent = mfTools
+	Instance.new("UIStroke", selectAllMat).Color = Theme.Border
+
+	local selectNoneMat = Instance.new("TextButton")
+	selectNoneMat.Size = UDim2.new(0.5, -4, 1, 0)
+	selectNoneMat.BackgroundColor3 = Theme.Panel
+	selectNoneMat.Text = "SELECT NONE"
+	selectNoneMat.Font = Theme.FontTech
+	selectNoneMat.TextSize = 10
+	selectNoneMat.TextColor3 = Theme.Text
+	selectNoneMat.Parent = mfTools
+	Instance.new("UIStroke", selectNoneMat).Color = Theme.Border
+
+	local matListScroll = Instance.new("ScrollingFrame")
+	matListScroll.Size = UDim2.new(1, 0, 1, -28)
+	matListScroll.Position = UDim2.new(0, 0, 0, 28)
+	matListScroll.BackgroundTransparency = 1
+	matListScroll.BackgroundColor3 = Theme.Panel -- Slight bg for list
+	matListScroll.BackgroundTransparency = 0.8
+	matListScroll.ScrollBarThickness = 4
+	matListScroll.ScrollBarImageColor3 = Theme.Border
+	matListScroll.Parent = matFilterContainer
+
+	local matListLayout = Instance.new("UIGridLayout")
+	matListLayout.CellSize = UDim2.new(0.48, 0, 0, 24)
+	matListLayout.CellPadding = UDim2.new(0.04, 0, 0, 4)
+	matListLayout.Parent = matListScroll
+
+	UI.C.materialButtons = {}
+
+	local allMaterials = Enum.Material:GetEnumItems()
+	table.sort(allMaterials, function(a,b) return a.Name < b.Name end)
+
+	for _, mat in ipairs(allMaterials) do
+		-- Skip Air or other non-surface mats if needed, but keeping all is safer
+		if mat ~= Enum.Material.Air then
+			local btn = Instance.new("TextButton")
+			btn.BackgroundColor3 = Theme.Panel
+			btn.Text = ""
+			btn.Parent = matListScroll
+
+			local stroke = Instance.new("UIStroke")
+			stroke.Color = Theme.Border
+			stroke.Parent = btn
+
+			local check = Instance.new("Frame")
+			check.Size = UDim2.new(0, 14, 0, 14)
+			check.Position = UDim2.new(0, 5, 0.5, -7)
+			check.BackgroundColor3 = Theme.Background
+			check.BorderSizePixel = 0
+			check.Parent = btn
+			local checkStroke = Instance.new("UIStroke")
+			checkStroke.Color = Theme.Border
+			checkStroke.Parent = check
+
+			local innerCheck = Instance.new("Frame")
+			innerCheck.Size = UDim2.new(1, -4, 1, -4)
+			innerCheck.Position = UDim2.new(0, 2, 0, 2)
+			innerCheck.BackgroundColor3 = Theme.Accent
+			innerCheck.BorderSizePixel = 0
+			innerCheck.Visible = false -- Toggled
+			innerCheck.Parent = check
+
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.new(1, -24, 1, 0)
+			label.Position = UDim2.new(0, 24, 0, 0)
+			label.BackgroundTransparency = 1
+			label.Text = mat.Name
+			label.Font = Theme.FontMain
+			label.TextSize = 10
+			label.TextColor3 = Theme.TextDim
+			label.TextXAlignment = Enum.TextXAlignment.Left
+			label.Parent = btn
+
+			UI.C.materialButtons[mat] = {Button = btn, Inner = innerCheck, Label = label}
+
+			btn.MouseButton1Click:Connect(function()
+				if State.MaterialFilter.Whitelist[mat] then
+					State.MaterialFilter.Whitelist[mat] = nil
+				else
+					State.MaterialFilter.Whitelist[mat] = true
+				end
+				UI.updateAllToggles()
+			end)
+		end
+	end
+
+	selectAllMat.MouseButton1Click:Connect(function()
+		for _, mat in ipairs(allMaterials) do
+			if mat ~= Enum.Material.Air then
+				State.MaterialFilter.Whitelist[mat] = true
+			end
+		end
+		UI.updateAllToggles()
+	end)
+
+	selectNoneMat.MouseButton1Click:Connect(function()
+		State.MaterialFilter.Whitelist = {}
+		UI.updateAllToggles()
+	end)
+
+	-- SLOPE MASK UI
+	createOrderedSectionHeader("SLOPE MASK", TabTuning.frame)
+
+	UI.C.slopeMaskToggle = {createTechToggle("Enable Slope Mask", TabTuning.frame)}
+	UI.C.slopeMaskToggle[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+
+	UI.C.slopeMaskToggle[1].MouseButton1Click:Connect(function()
+		State.SlopeFilter.Enabled = not State.SlopeFilter.Enabled
+		UI.updateAllToggles()
+	end)
+
+	UI.C.slopeGrid = Instance.new("Frame")
+	UI.C.slopeGrid.Size = UDim2.new(1, 0, 0, 40)
+	UI.C.slopeGrid.BackgroundTransparency = 1
+	UI.C.slopeGrid.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+	UI.C.slopeGrid.Parent = TabTuning.frame
+
+	local slopeLayout = Instance.new("UIGridLayout")
+	slopeLayout.CellSize = UDim2.new(0.48, 0, 0, 40)
+	slopeLayout.CellPadding = UDim2.new(0.04, 0, 0, 0)
+	slopeLayout.Parent = UI.C.slopeGrid
+
+	UI.C.slopeMinBox = {createTechInput("MIN ANGLE", "0", UI.C.slopeGrid)}
+	UI.C.slopeMaxBox = {createTechInput("MAX ANGLE", "45", UI.C.slopeGrid)}
+
+	UI.C.slopeMinBox[1].FocusLost:Connect(function()
+		State.SlopeFilter.MinAngle = Utils.parseNumber(UI.C.slopeMinBox[1].Text, 0)
+	end)
+
+	UI.C.slopeMaxBox[1].FocusLost:Connect(function()
+		State.SlopeFilter.MaxAngle = Utils.parseNumber(UI.C.slopeMaxBox[1].Text, 45)
+	end)
+
+	-- HEIGHT MASK UI
+	createOrderedSectionHeader("HEIGHT MASK (Y-LEVEL)", TabTuning.frame)
+
+	UI.C.heightMaskToggle = {createTechToggle("Enable Height Mask", TabTuning.frame)}
+	UI.C.heightMaskToggle[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+
+	UI.C.heightMaskToggle[1].MouseButton1Click:Connect(function()
+		State.HeightFilter.Enabled = not State.HeightFilter.Enabled
+		UI.updateAllToggles()
+	end)
+
+	UI.C.heightGrid = Instance.new("Frame")
+	UI.C.heightGrid.Size = UDim2.new(1, 0, 0, 40)
+	UI.C.heightGrid.BackgroundTransparency = 1
+	UI.C.heightGrid.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+	UI.C.heightGrid.Parent = TabTuning.frame
+
+	local heightLayout = Instance.new("UIGridLayout")
+	heightLayout.CellSize = UDim2.new(0.48, 0, 0, 40)
+	heightLayout.CellPadding = UDim2.new(0.04, 0, 0, 0)
+	heightLayout.Parent = UI.C.heightGrid
+
+	UI.C.minHeightBox = {createTechInput("MIN Y", "-500", UI.C.heightGrid)}
+	UI.C.maxHeightBox = {createTechInput("MAX Y", "500", UI.C.heightGrid)}
+
+	UI.C.minHeightBox[1].FocusLost:Connect(function()
+		State.HeightFilter.MinHeight = Utils.parseNumber(UI.C.minHeightBox[1].Text, -500)
+	end)
+
+	UI.C.maxHeightBox[1].FocusLost:Connect(function()
+		State.HeightFilter.MaxHeight = Utils.parseNumber(UI.C.maxHeightBox[1].Text, 500)
+	end)
+
+	-- PHYSICS DROP UI
+	createOrderedSectionHeader("PHYSICS SIMULATION", TabTuning.frame)
+
+	UI.C.physicsDropToggle = {createTechToggle("Enable Physics Drop", TabTuning.frame)}
+	UI.C.physicsDropToggle[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+
+	UI.C.physicsDropToggle[1].MouseButton1Click:Connect(function()
+		State.PhysicsDrop.Enabled = not State.PhysicsDrop.Enabled
+		UI.updateAllToggles()
+	end)
+
+	UI.C.physicsGrid = Instance.new("Frame")
+	UI.C.physicsGrid.Size = UDim2.new(1, 0, 0, 40)
+	UI.C.physicsGrid.BackgroundTransparency = 1
+	UI.C.physicsGrid.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+	UI.C.physicsGrid.Parent = TabTuning.frame
+
+	local physLayout = Instance.new("UIGridLayout")
+	physLayout.CellSize = UDim2.new(0.48, 0, 0, 40)
+	physLayout.CellPadding = UDim2.new(0.04, 0, 0, 0)
+	physLayout.Parent = UI.C.physicsGrid
+
+	UI.C.physDurationBox = {createTechInput("DURATION (Sec)", "1.0", UI.C.physicsGrid)}
+
+	UI.C.physDurationBox[1].FocusLost:Connect(function()
+		State.PhysicsDrop.Duration = math.max(0.1, Utils.parseNumber(UI.C.physDurationBox[1].Text, 1.0))
+	end)
+
 	-- Connect Tuning Toggles & Inputs (Moved to end to ensure elements exist)
 	-- Environment
 	UI.C.smartSnapBtn[1].MouseButton1Click:Connect(function()
@@ -796,45 +1083,6 @@ function UI.buildInterface()
 	switchTab("Tools")
 end
 
-local function updateToggle(btn, inner, label, state, activeText, inactiveText)
-	inner.Visible = state
-	if state then
-		inner.BackgroundColor3 = Theme.Accent
-		if activeText then label.Text = activeText end
-	else
-		if inactiveText then label.Text = inactiveText end
-	end
-end
-
-local function updateInputGroupEnabled(grid, enabled, randomizeBtn)
-	for _, child in ipairs(grid:GetChildren()) do
-		if child:IsA("Frame") and child:FindFirstChildOfClass("TextBox") then
-			local inputBox = child:FindFirstChildOfClass("TextBox")
-			inputBox.TextEditable = enabled
-			if enabled then
-				inputBox.TextColor3 = Theme.Accent
-				child:FindFirstChildOfClass("TextLabel").TextColor3 = Theme.TextDim
-			else
-				inputBox.TextColor3 = Theme.TextDim
-				child:FindFirstChildOfClass("TextLabel").TextColor3 = Color3.fromHex("505050")
-			end
-		end
-	end
-	if randomizeBtn then
-		randomizeBtn[1].Active = enabled
-		pcall(function() randomizeBtn[1].Interactable = enabled end)
-		if enabled then
-			randomizeBtn[2].Color = Theme.Border
-			randomizeBtn[1].TextColor3 = Theme.Text
-			randomizeBtn[1].TextTransparency = 0
-		else
-			randomizeBtn[2].Color = Color3.fromHex("2a2a2a")
-			randomizeBtn[1].TextColor3 = Theme.TextDim
-			randomizeBtn[1].TextTransparency = 0.5
-		end
-	end
-end
-
 function UI.updateModeButtonsUI()
 	for mode, controls in pairs(UI.C.modeButtons) do
 		local isSelected = (mode == State.currentMode)
@@ -856,6 +1104,7 @@ function UI.updateModeButtonsUI()
 	-- Context visibility
 	UI.C.pathFrame.Visible = (State.currentMode == "Path")
 	UI.C.fillFrame.Visible = (State.currentMode == "Fill")
+	UI.C.eraserFrame.Visible = (State.currentMode == "Erase" or State.currentMode == "Replace")
 
 	-- Input visibility
 	local showBrush = (State.currentMode == "Paint" or State.currentMode == "Erase" or State.currentMode == "Replace" or State.currentMode == "Volume" or State.currentMode == "Fill")
@@ -902,6 +1151,31 @@ function UI.updateAllToggles()
 
 	updateToggle(UI.C.smartSnapBtn[1], UI.C.smartSnapBtn[2], UI.C.smartSnapBtn[3], State.smartSnapEnabled)
 	updateToggle(UI.C.snapToGridBtn[1], UI.C.snapToGridBtn[2], UI.C.snapToGridBtn[3], State.snapToGridEnabled)
+
+	updateToggle(UI.C.materialFilterToggle[1], UI.C.materialFilterToggle[2], UI.C.materialFilterToggle[3], State.MaterialFilter.Enabled)
+
+	updateToggle(UI.C.slopeMaskToggle[1], UI.C.slopeMaskToggle[2], UI.C.slopeMaskToggle[3], State.SlopeFilter.Enabled)
+	updateInputGroupEnabled(UI.C.slopeGrid, State.SlopeFilter.Enabled)
+
+	updateToggle(UI.C.heightMaskToggle[1], UI.C.heightMaskToggle[2], UI.C.heightMaskToggle[3], State.HeightFilter.Enabled)
+	updateInputGroupEnabled(UI.C.heightGrid, State.HeightFilter.Enabled)
+
+	updateToggle(UI.C.physicsDropToggle[1], UI.C.physicsDropToggle[2], UI.C.physicsDropToggle[3], State.PhysicsDrop.Enabled)
+	updateInputGroupEnabled(UI.C.physicsGrid, State.PhysicsDrop.Enabled)
+
+	if UI.C.materialButtons then
+		for mat, controls in pairs(UI.C.materialButtons) do
+			local isWhitelisted = State.MaterialFilter.Whitelist[mat] == true
+			controls.Inner.Visible = isWhitelisted
+			if isWhitelisted then
+				controls.Label.TextColor3 = Theme.Text
+				controls.Button.BackgroundColor3 = Color3.fromHex("25252A")
+			else
+				controls.Label.TextColor3 = Theme.TextDim
+				controls.Button.BackgroundColor3 = Theme.Panel
+			end
+		end
+	end
 
 	updateToggle(UI.C.randomizeScaleToggle[1], UI.C.randomizeScaleToggle[2], UI.C.randomizeScaleToggle[3], State.Randomizer.Scale.Enabled)
 	updateToggle(UI.C.randomizeRotationToggle[1], UI.C.randomizeRotationToggle[2], UI.C.randomizeRotationToggle[3], State.Randomizer.Rotation.Enabled)
