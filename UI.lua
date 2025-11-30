@@ -536,6 +536,28 @@ function UI.buildInterface()
 	UI.C.clearPathBtn = {createTechButton("CLEAR", pathBtnGrid)}
 	UI.C.clearPathBtn[1].TextColor3 = Theme.Destructive
 
+	-- Path Undo/Redo
+	local pathHistoryGrid = Instance.new("Frame")
+	pathHistoryGrid.LayoutOrder = 3
+	pathHistoryGrid.Size = UDim2.new(1, 0, 0, 32)
+	pathHistoryGrid.BackgroundTransparency = 1
+	pathHistoryGrid.Parent = UI.C.pathFrame
+	local phgl = Instance.new("UIGridLayout")
+	phgl.CellSize = UDim2.new(0.48, 0, 0, 32)
+	phgl.CellPadding = UDim2.new(0.04, 0, 0, 0)
+	phgl.Parent = pathHistoryGrid
+
+	UI.C.undoPathBtn = {createTechButton("UNDO", pathHistoryGrid)}
+	UI.C.redoPathBtn = {createTechButton("REDO", pathHistoryGrid)}
+
+	UI.C.undoPathBtn[1].MouseButton1Click:Connect(function()
+		if Core and Core.pathUndo then Core.pathUndo() end
+	end)
+
+	UI.C.redoPathBtn[1].MouseButton1Click:Connect(function()
+		if Core and Core.pathRedo then Core.pathRedo() end
+	end)
+
 	-- Fill Context
 	UI.C.fillFrame = Instance.new("Frame")
 	UI.C.fillFrame.AutomaticSize = Enum.AutomaticSize.Y
@@ -791,6 +813,8 @@ function UI.buildInterface()
 	UI.C.gridSizeBox[2].LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
 	UI.C.ghostTransparencyBox = {createTechInput("GHOST TRANS", "0.65", TabTuning.frame)}
 	UI.C.ghostTransparencyBox[2].LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+	UI.C.ghostLimitBox = {createTechInput("GHOST LIMIT", "20", TabTuning.frame)}
+	UI.C.ghostLimitBox[2].LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
 
 
 	createOrderedSectionHeader("SURFACE LOCK", TabTuning.frame)
@@ -1070,6 +1094,11 @@ function UI.buildInterface()
 
 	UI.C.ghostTransparencyBox[1].FocusLost:Connect(function()
 		State.ghostTransparency = Utils.parseNumber(UI.C.ghostTransparencyBox[1].Text, 0.65)
+		if Core then Core.updatePreview() end
+	end)
+
+	UI.C.ghostLimitBox[1].FocusLost:Connect(function()
+		State.MaxPreviewGhosts = math.floor(math.max(1, Utils.parseNumber(UI.C.ghostLimitBox[1].Text, 20)))
 		if Core then Core.updatePreview() end
 	end)
 
