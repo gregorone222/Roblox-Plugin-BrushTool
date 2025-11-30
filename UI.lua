@@ -442,7 +442,7 @@ function UI.buildInterface()
 	mgLayout.Parent = modeGrid
 
 	UI.C.modeButtons = {}
-	local modeNames = {"Paint", "Line", "Path", "Fill", "Replace", "Stamp", "Volume", "Erase"}
+	local modeNames = {"Paint", "Line", "Path", "Fill", "Replace", "Stamp", "Volume", "Erase", "Biome"}
 	for _, m in ipairs(modeNames) do
 		local b, s = createTechButton(string.upper(m), modeGrid)
 		b.TextSize = 11
@@ -524,6 +524,33 @@ function UI.buildInterface()
 			updateToggle(UI.C.eraserFilterBtn[1], UI.C.eraserFilterBtn[2], UI.C.eraserFilterBtn[3], false, "Filter: Current Group", "Filter: Everything")
 		end
 	end)
+
+	-- Biome Context
+	UI.C.biomeFrame = Instance.new("Frame")
+	UI.C.biomeFrame.AutomaticSize = Enum.AutomaticSize.Y
+	UI.C.biomeFrame.Size = UDim2.new(1, 0, 0, 0)
+	UI.C.biomeFrame.BackgroundTransparency = 1
+	UI.C.biomeFrame.Visible = false
+	UI.C.biomeFrame.Parent = UI.C.contextContainer
+
+	local biomeLayout = Instance.new("UIListLayout", UI.C.biomeFrame)
+	biomeLayout.Padding = UDim.new(0, 8)
+
+	UI.C.biomeMaterialBtn = {createTechButton("TARGET: GRASS", UI.C.biomeFrame)}
+
+	UI.C.biomeMaterialList = Instance.new("ScrollingFrame")
+	UI.C.biomeMaterialList.Size = UDim2.new(1, 0, 0, 150)
+	UI.C.biomeMaterialList.BackgroundTransparency = 1
+	UI.C.biomeMaterialList.BackgroundColor3 = Theme.Panel
+	UI.C.biomeMaterialList.BackgroundTransparency = 0.1
+	UI.C.biomeMaterialList.Visible = false
+	UI.C.biomeMaterialList.Parent = UI.C.biomeFrame
+	local bml = Instance.new("UIGridLayout", UI.C.biomeMaterialList)
+	bml.CellSize = UDim2.new(0.48, 0, 0, 24)
+	bml.CellPadding = UDim2.new(0.04, 0, 0, 4)
+
+	UI.C.biomeRunBtn = {createTechButton("GENERATE IN RANGE", UI.C.biomeFrame)}
+	UI.C.biomeRunBtn[1].TextColor3 = Theme.Success
 
 	-- ASSETS TAB
 	createSectionHeader("ASSET GROUPS", TabAssets.frame)
@@ -621,6 +648,14 @@ function UI.buildInterface()
 	asgl.Parent = asGrid
 	UI.C.assetSettingsOffsetY = {createTechInput("Y-OFFSET", "0", asGrid)}
 	UI.C.assetSettingsWeight = {createTechInput("PROBABILITY", "1", asGrid)}
+	UI.C.assetSettingsBaseScale = {createTechInput("BASE SCALE", "1", asGrid)}
+	UI.C.assetSettingsBaseRotation = {createTechInput("BASE ROT (Y)", "0", asGrid)}
+	UI.C.assetSettingsBaseRotationX = {createTechInput("BASE ROT (X)", "0", asGrid)}
+
+	-- Update frame size to accommodate new inputs
+	UI.C.assetSettingsFrame.Size = UDim2.new(1, 0, 0, 220)
+	asGrid.Size = UDim2.new(1, 0, 0, 170)
+
 	UI.C.assetSettingsActive = {createTechToggle("Active in Brush", UI.C.assetSettingsFrame)}
 
 	UI.C.assetSettingsActive[1].MouseButton1Click:Connect(function()
@@ -639,6 +674,30 @@ function UI.buildInterface()
 		if State.selectedAssetInUI then
 			local val = Utils.parseNumber(UI.C.assetSettingsOffsetY[1].Text, 0)
 			State.assetOffsets[State.selectedAssetInUI] = val
+			State.persistOffsets()
+		end
+	end)
+
+	UI.C.assetSettingsBaseScale[1].FocusLost:Connect(function()
+		if State.selectedAssetInUI then
+			local val = Utils.parseNumber(UI.C.assetSettingsBaseScale[1].Text, 1)
+			State.assetOffsets[State.selectedAssetInUI .. "_scale"] = val
+			State.persistOffsets()
+		end
+	end)
+
+	UI.C.assetSettingsBaseRotation[1].FocusLost:Connect(function()
+		if State.selectedAssetInUI then
+			local val = Utils.parseNumber(UI.C.assetSettingsBaseRotation[1].Text, 0)
+			State.assetOffsets[State.selectedAssetInUI .. "_rotation"] = val
+			State.persistOffsets()
+		end
+	end)
+
+	UI.C.assetSettingsBaseRotationX[1].FocusLost:Connect(function()
+		if State.selectedAssetInUI then
+			local val = Utils.parseNumber(UI.C.assetSettingsBaseRotationX[1].Text, 0)
+			State.assetOffsets[State.selectedAssetInUI .. "_rotationX"] = val
 			State.persistOffsets()
 		end
 	end)
@@ -1104,12 +1163,13 @@ function UI.updateModeButtonsUI()
 	-- Context visibility
 	UI.C.pathFrame.Visible = (State.currentMode == "Path")
 	UI.C.fillFrame.Visible = (State.currentMode == "Fill")
+	UI.C.biomeFrame.Visible = (State.currentMode == "Biome")
 	UI.C.eraserFrame.Visible = (State.currentMode == "Erase" or State.currentMode == "Replace")
 
 	-- Input visibility
-	local showBrush = (State.currentMode == "Paint" or State.currentMode == "Erase" or State.currentMode == "Replace" or State.currentMode == "Volume" or State.currentMode == "Fill")
+	local showBrush = (State.currentMode == "Paint" or State.currentMode == "Erase" or State.currentMode == "Replace" or State.currentMode == "Volume" or State.currentMode == "Fill" or State.currentMode == "Biome")
 	local showDensity = (State.currentMode == "Paint" or State.currentMode == "Volume" or State.currentMode == "Fill")
-	local showSpacing = (State.currentMode == "Paint" or State.currentMode == "Line" or State.currentMode == "Path")
+	local showSpacing = (State.currentMode == "Paint" or State.currentMode == "Line" or State.currentMode == "Path" or State.currentMode == "Biome")
 	local showDistance = (State.currentMode == "Volume")
 
 	UI.C.radiusBox[2].Visible = showBrush
@@ -1213,12 +1273,35 @@ local function setupViewport(viewport, asset, zoomScale)
 	for _, c in ipairs(viewport:GetChildren()) do c:Destroy() end
 	local cam = Instance.new("Camera"); cam.Parent = viewport; viewport.CurrentCamera = cam
 	local worldModel = Instance.new("WorldModel"); worldModel.Parent = viewport
-	local c = asset:Clone(); c.Parent = worldModel
-	local cf, size = c:GetBoundingBox()
-	local maxDim = math.max(size.X, size.Y, size.Z)
-	local dist = (maxDim / 2) / math.tan(math.rad(35))
-	dist = (dist * 1.2) / zoomScale
-	cam.CFrame = CFrame.new(cf.Position + Vector3.new(dist, dist*0.8, dist), cf.Position)
+
+	local c
+	if asset:IsA("Decal") or asset:IsA("Texture") then
+		local part = Instance.new("Part")
+		part.Size = Vector3.new(4, 4, 1)
+		part.Anchored = true
+		part.Color = Color3.fromRGB(200, 200, 200)
+		part.Transparency = 0
+		c = asset:Clone()
+		c.Parent = part
+		part.Parent = worldModel
+
+		-- Point camera at front face (Back, because decal is usually on Front but camera looks at Back? Wait.)
+		-- Decal default face is Front (-Z).
+		-- So Camera needs to be at -Z (looking at +Z) or +Z (looking at -Z)?
+		-- Default camera looks at -Z.
+		-- To look at the Front face (-Z relative to part center), camera should be at -Z * distance? No.
+		-- Standard Roblox Front face is -Z.
+		-- If we place camera at -Z * 6, and look at 0, we are looking in +Z direction.
+		-- So we see the Front face.
+		cam.CFrame = CFrame.new(part.Position + Vector3.new(0, 0, -6 / zoomScale), part.Position)
+	else
+		c = asset:Clone(); c.Parent = worldModel
+		local cf, size = c:GetBoundingBox()
+		local maxDim = math.max(size.X, size.Y, size.Z)
+		local dist = (maxDim / 2) / math.tan(math.rad(35))
+		dist = (dist * 1.2) / zoomScale
+		cam.CFrame = CFrame.new(cf.Position + Vector3.new(dist, dist*0.8, dist), cf.Position)
+	end
 end
 
 function UI.updateAssetUIList()
@@ -1369,6 +1452,16 @@ function UI.updateAssetUIList()
 			UI.C.assetSettingsName.Text = "SELECTED: " .. string.upper(asset.Name)
 			UI.C.assetSettingsOffsetY[1].Text = tostring(State.assetOffsets[asset.Name] or 0)
 			UI.C.assetSettingsWeight[1].Text = tostring(State.assetOffsets[asset.Name.."_weight"] or 1)
+			UI.C.assetSettingsBaseScale[1].Text = tostring(State.assetOffsets[asset.Name.."_scale"] or 1)
+			UI.C.assetSettingsBaseRotation[1].Text = tostring(State.assetOffsets[asset.Name.."_rotation"] or 0)
+			UI.C.assetSettingsBaseRotationX[1].Text = tostring(State.assetOffsets[asset.Name.."_rotationX"] or 0)
+
+			-- Toggle visibility based on asset type
+			local isSticker = asset:IsA("Decal") or asset:IsA("Texture")
+			UI.C.assetSettingsBaseScale[2].Visible = isSticker
+			UI.C.assetSettingsBaseRotation[2].Visible = isSticker
+			UI.C.assetSettingsBaseRotationX[2].Visible = isSticker
+
 			UI.updateAllToggles()
 			UI.updateAssetUIList() 
 		end)
