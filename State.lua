@@ -61,11 +61,6 @@ State.SmartEraser = {
 	FilterMode = "All" -- "All" or "CurrentGroup"
 }
 
--- Biome State
-State.Biome = {
-	Whitelist = {}
-}
-
 -- Preview Objects (Will be set by Core)
 State.previewPart = nil
 State.cyl = nil
