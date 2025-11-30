@@ -29,6 +29,40 @@ local function getWorkspaceContainer()
 	return container
 end
 
+function Core.getOutputParent(assetName)
+	local mainContainer = getWorkspaceContainer()
+
+	if State.Output.Mode == "Fixed" then
+		local folderName = Utils.trim(State.Output.FixedFolderName)
+		if folderName == "" then folderName = "BrushOutput" end
+
+		local target = mainContainer:FindFirstChild(folderName)
+		if not target then
+			target = Instance.new("Folder")
+			target.Name = folderName
+			target.Parent = mainContainer
+		end
+		return target
+
+	elseif State.Output.Mode == "Grouped" then
+		local folderName = assetName or "Unknown"
+		local target = mainContainer:FindFirstChild(folderName)
+		if not target then
+			target = Instance.new("Folder")
+			target.Name = folderName
+			target.Parent = mainContainer
+		end
+		return target
+
+	else -- "PerStroke"
+		-- In PerStroke mode, we usually create a new folder for the specific action.
+		-- However, this helper is designed to return *a* parent.
+		-- The calling function needs to handle the creation of the transient folder if in PerStroke mode.
+		-- So we return nil to indicate "Caller handle this".
+		return nil
+	end
+end
+
 function Core.isMaterialAllowed(material)
 	if not State.MaterialFilter.Enabled then return true end
 	return State.MaterialFilter.Whitelist[material] == true
@@ -646,6 +680,10 @@ function Core.updatePreview()
 		elseif State.currentMode == "Replace" then State.previewPart.Color = Color3.fromRGB(80, 180, 255)
 		else State.previewPart.Color = Color3.fromRGB(255, 80, 80) end
 
+		if State.currentMode == "Paint" or State.currentMode == "Line" or State.currentMode == "Path" or State.currentMode == "Fill" then State.previewPart.Color = Color3.fromRGB(80, 255, 80)
+		elseif State.currentMode == "Replace" then State.previewPart.Color = Color3.fromRGB(80, 180, 255)
+		else State.previewPart.Color = Color3.fromRGB(255, 80, 80) end
+
 		State.previewPart.Shape = Enum.PartType.Cylinder
 		local radius = math.max(0.1, Utils.parseNumber(UI.C.radiusBox[1].Text, 10))
 		local surfacePos, normal = Core.findSurfacePositionAndNormal()
@@ -693,13 +731,19 @@ function Core.paintAt(center, surfaceNormal)
 
 	ChangeHistoryService:SetWaypoint("Brush - Before Paint")
 	local container = getWorkspaceContainer()
-	local groupFolder = Instance.new("Folder")
-	groupFolder.Name = "BrushGroup_" .. tostring(math.floor(os.time()))
-	groupFolder.Parent = container
+
+	-- Determine Parent Logic
+	local transientFolder = nil
+	if State.Output.Mode == "PerStroke" then
+		transientFolder = Instance.new("Folder")
+		transientFolder.Name = "BrushGroup_" .. tostring(math.floor(os.time()))
+		transientFolder.Parent = container
+	end
+
 	local placed = {}
 
 	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
-	if not targetGroup then groupFolder:Destroy(); return end
+	if not targetGroup then if transientFolder then transientFolder:Destroy() end; return end
 
 	local allAssets = targetGroup:GetChildren()
 	local activeAssets = {}
@@ -708,7 +752,7 @@ function Core.paintAt(center, surfaceNormal)
 		if isActive == nil then isActive = true end
 		if isActive then table.insert(activeAssets, asset) end
 	end
-	if #activeAssets == 0 then groupFolder:Destroy(); return end
+	if #activeAssets == 0 then if transientFolder then transientFolder:Destroy() end; return end
 
 	local up = surfaceNormal
 	local look = Vector3.new(1, 0, 0)
@@ -740,11 +784,18 @@ function Core.paintAt(center, surfaceNormal)
 		end
 		if candidatePos then
 			local placedAsset = placeAsset(assetToClone, candidatePos, candidateNormal)
-			if placedAsset then placedAsset.Parent = groupFolder end
+			if placedAsset then 
+				if transientFolder then
+					placedAsset.Parent = transientFolder
+				else
+					placedAsset.Parent = Core.getOutputParent(assetToClone.Name)
+				end
+			end
 			table.insert(placed, candidatePos)
 		end
 	end
-	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
+
+	if transientFolder and #transientFolder:GetChildren() == 0 then transientFolder:Destroy() end
 	ChangeHistoryService:SetWaypoint("Brush - After Paint")
 end
 
@@ -762,10 +813,16 @@ function Core.stampAt(center, surfaceNormal)
 
 	ChangeHistoryService:SetWaypoint("Brush - Before Stamp")
 	local container = getWorkspaceContainer()
-	local groupFolder = Instance.new("Folder"); groupFolder.Name = "BrushStamp_" .. tostring(math.floor(os.time())); groupFolder.Parent = container
+
+	local transientFolder = nil
+	if State.Output.Mode == "PerStroke" then
+		transientFolder = Instance.new("Folder")
+		transientFolder.Name = "BrushStamp_" .. tostring(math.floor(os.time()))
+		transientFolder.Parent = container
+	end
 
 	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
-	if not targetGroup then groupFolder:Destroy(); return end
+	if not targetGroup then if transientFolder then transientFolder:Destroy() end; return end
 	local allAssets = targetGroup:GetChildren()
 
 	local activeAssets = {}
@@ -774,12 +831,18 @@ function Core.stampAt(center, surfaceNormal)
 		if isActive == nil then isActive = true end
 		if isActive then table.insert(activeAssets, asset) end
 	end
-	if #activeAssets == 0 then groupFolder:Destroy(); return end
+	if #activeAssets == 0 then if transientFolder then transientFolder:Destroy() end; return end
 
 	local assetToPlace = State.nextStampAsset or getRandomWeightedAsset(activeAssets)
 	if assetToPlace then
 		local placedAsset = placeAsset(assetToPlace, center, surfaceNormal, State.nextStampScale, State.nextStampRotation, State.nextStampWobble)
-		if placedAsset then placedAsset.Parent = groupFolder end
+		if placedAsset then 
+			if transientFolder then
+				placedAsset.Parent = transientFolder
+			else
+				placedAsset.Parent = Core.getOutputParent(assetToPlace.Name)
+			end
+		end
 	end
 	State.nextStampAsset = nil 
 	State.nextStampScale = nil
@@ -787,7 +850,8 @@ function Core.stampAt(center, surfaceNormal)
 	State.nextStampColorShift = nil
 	State.nextStampTransparencyShift = nil
 	State.nextStampWobble = nil
-	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
+
+	if transientFolder and #transientFolder:GetChildren() == 0 then transientFolder:Destroy() end
 	ChangeHistoryService:SetWaypoint("Brush - After Stamp")
 end
 
@@ -800,12 +864,16 @@ function Core.paintAlongLine(startPos, endPos)
 
 	ChangeHistoryService:SetWaypoint("Brush - Before Line Paint")
 	local container = getWorkspaceContainer()
-	local groupFolder = Instance.new("Folder")
-	groupFolder.Name = "BrushLine_" .. tostring(math.floor(os.time()))
-	groupFolder.Parent = container
+
+	local transientFolder = nil
+	if State.Output.Mode == "PerStroke" then
+		transientFolder = Instance.new("Folder")
+		transientFolder.Name = "BrushLine_" .. tostring(math.floor(os.time()))
+		transientFolder.Parent = container
+	end
 
 	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
-	if not targetGroup then groupFolder:Destroy(); return end
+	if not targetGroup then if transientFolder then transientFolder:Destroy() end; return end
 	local allAssets = targetGroup:GetChildren()
 	local activeAssets = {}
 	for _, asset in ipairs(allAssets) do
@@ -859,7 +927,13 @@ function Core.paintAlongLine(startPos, endPos)
 				local assetToClone = getRandomWeightedAsset(activeAssets)
 				if assetToClone then
 					local placedAsset = placeAsset(assetToClone, targetPos, targetNormal)
-					if placedAsset then placedAsset.Parent = groupFolder end
+					if placedAsset then 
+						if transientFolder then
+							placedAsset.Parent = transientFolder
+						else
+							placedAsset.Parent = Core.getOutputParent(assetToClone.Name)
+						end
+					end
 				end
 			end
 
@@ -867,7 +941,7 @@ function Core.paintAlongLine(startPos, endPos)
 		end
 	end
 
-	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
+	if transientFolder and #transientFolder:GetChildren() == 0 then transientFolder:Destroy() end
 	ChangeHistoryService:SetWaypoint("Brush - After Line Paint")
 end
 
@@ -929,11 +1003,14 @@ function Core.eraseAt(center)
 			if State.SmartEraser.FilterMode == "CurrentGroup" then
 				local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
 				if targetGroup then
-					-- Check if asset name exists in the current group
 					if not targetGroup:FindFirstChild(asset.Name) then
 						shouldErase = false
 					end
 				end
+			elseif State.SmartEraser.FilterMode == "ActiveOnly" then
+				local isActive = State.assetOffsets[asset.Name .. "_active"]
+				if isActive == nil then isActive = true end
+				if not isActive then shouldErase = false end
 			end
 
 			if shouldErase then
@@ -967,6 +1044,10 @@ function Core.replaceAt(center)
 				if not targetGroup:FindFirstChild(asset.Name) then
 					shouldReplace = false
 				end
+			elseif State.SmartEraser.FilterMode == "ActiveOnly" then
+				local isActive = State.assetOffsets[asset.Name .. "_active"]
+				if isActive == nil then isActive = true end
+				if not isActive then shouldReplace = false end
 			end
 
 			if shouldReplace then
@@ -1125,12 +1206,16 @@ function Core.generatePathAssets()
 
 	ChangeHistoryService:SetWaypoint("Brush - Before Path Gen")
 	local container = getWorkspaceContainer()
-	local groupFolder = Instance.new("Folder")
-	groupFolder.Name = "BrushPath_" .. tostring(math.floor(os.time()))
-	groupFolder.Parent = container
+
+	local transientFolder = nil
+	if State.Output.Mode == "PerStroke" then
+		transientFolder = Instance.new("Folder")
+		transientFolder.Name = "BrushPath_" .. tostring(math.floor(os.time()))
+		transientFolder.Parent = container
+	end
 
 	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
-	if not targetGroup then groupFolder:Destroy(); return end
+	if not targetGroup then if transientFolder then transientFolder:Destroy() end; return end
 	local activeAssets = {}
 	for _, asset in ipairs(targetGroup:GetChildren()) do
 		local isActive = State.assetOffsets[asset.Name .. "_active"]
@@ -1189,14 +1274,20 @@ function Core.generatePathAssets()
 					local assetToClone = getRandomWeightedAsset(activeAssets)
 					if assetToClone then
 						local placed = placeAsset(assetToClone, targetPos, targetNormal)
-						if placed then placed.Parent = groupFolder end
+						if placed then 
+							if transientFolder then
+								placed.Parent = transientFolder 
+							else
+								placed.Parent = Core.getOutputParent(assetToClone.Name)
+							end
+						end
 					end
 				end
 			end
 		end
 	end
 
-	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
+	if transientFolder and #transientFolder:GetChildren() == 0 then transientFolder:Destroy() end
 	ChangeHistoryService:SetWaypoint("Brush - After Path Gen")
 end
 
