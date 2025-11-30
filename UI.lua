@@ -429,9 +429,49 @@ function UI.buildInterface()
 	local TabTuning = createTab("Tuning", "TUNING", tabBar, tabContent)
 
 	-- TOOLS TAB
+	-- OUTPUT SETTINGS UI
+	createSectionHeader("OUTPUT ORGANIZATION", TabTools.frame)
+	local outputFrame = Instance.new("Frame")
+	outputFrame.Size = UDim2.new(1, 0, 0, 0)
+	outputFrame.AutomaticSize = Enum.AutomaticSize.Y
+	outputFrame.BackgroundTransparency = 1
+	outputFrame.Parent = TabTools.frame
+	local ol = Instance.new("UIListLayout")
+	ol.Padding = UDim.new(0, 8)
+	ol.Parent = outputFrame
+
+	UI.C.outputModeBtn = {createTechButton("MODE: PER STROKE", outputFrame)}
+	UI.C.outputFolderNameInput = {createTechInput("FOLDER NAME", "BrushOutput", outputFrame)}
+
+	-- Initial State
+	UI.C.outputFolderNameInput[2].Visible = false
+
+	UI.C.outputModeBtn[1].MouseButton1Click:Connect(function()
+		if State.Output.Mode == "PerStroke" then
+			State.Output.Mode = "Fixed"
+			UI.C.outputModeBtn[1].Text = "MODE: FIXED FOLDER"
+			UI.C.outputFolderNameInput[2].Visible = true
+		elseif State.Output.Mode == "Fixed" then
+			State.Output.Mode = "Grouped"
+			UI.C.outputModeBtn[1].Text = "MODE: GROUP BY ASSET"
+			UI.C.outputFolderNameInput[2].Visible = false
+		else
+			State.Output.Mode = "PerStroke"
+			UI.C.outputModeBtn[1].Text = "MODE: PER STROKE"
+			UI.C.outputFolderNameInput[2].Visible = false
+		end
+	end)
+
+	UI.C.outputFolderNameInput[1].FocusLost:Connect(function()
+		local txt = Utils.trim(UI.C.outputFolderNameInput[1].Text)
+		if txt == "" then txt = "BrushOutput" end
+		State.Output.FixedFolderName = txt
+		UI.C.outputFolderNameInput[1].Text = txt
+	end)
+
 	createSectionHeader("MODE SELECT", TabTools.frame)
 	local modeGrid = Instance.new("Frame")
-	modeGrid.Size = UDim2.new(1, 0, 0, 100)
+	modeGrid.Size = UDim2.new(1, 0, 0, 0)
 	modeGrid.AutomaticSize = Enum.AutomaticSize.Y
 	modeGrid.BackgroundTransparency = 1
 	modeGrid.Parent = TabTools.frame
@@ -451,7 +491,7 @@ function UI.buildInterface()
 
 	createSectionHeader("BRUSH PARAMETERS", TabTools.frame)
 	local brushParamsContainer = Instance.new("Frame")
-	brushParamsContainer.Size = UDim2.new(1, 0, 0, 100)
+	brushParamsContainer.Size = UDim2.new(1, 0, 0, 0)
 	brushParamsContainer.AutomaticSize = Enum.AutomaticSize.Y
 	brushParamsContainer.BackgroundTransparency = 1
 	brushParamsContainer.Parent = TabTools.frame
@@ -466,7 +506,7 @@ function UI.buildInterface()
 	UI.C.distanceBox = {createTechInput("DISTANCE (Studs)", "30", brushParamsContainer)}
 
 	UI.C.contextContainer = Instance.new("Frame")
-	UI.C.contextContainer.Size = UDim2.new(1, 0, 0, 20)
+	UI.C.contextContainer.Size = UDim2.new(1, 0, 0, 0)
 	UI.C.contextContainer.AutomaticSize = Enum.AutomaticSize.Y
 	UI.C.contextContainer.BackgroundTransparency = 1
 	UI.C.contextContainer.Parent = TabTools.frame
@@ -519,6 +559,9 @@ function UI.buildInterface()
 		if State.SmartEraser.FilterMode == "All" then
 			State.SmartEraser.FilterMode = "CurrentGroup"
 			updateToggle(UI.C.eraserFilterBtn[1], UI.C.eraserFilterBtn[2], UI.C.eraserFilterBtn[3], true, "Filter: Current Group", "Filter: Everything")
+		elseif State.SmartEraser.FilterMode == "CurrentGroup" then
+			State.SmartEraser.FilterMode = "ActiveOnly"
+			updateToggle(UI.C.eraserFilterBtn[1], UI.C.eraserFilterBtn[2], UI.C.eraserFilterBtn[3], true, "Filter: Active Only", "Filter: Everything")
 		else
 			State.SmartEraser.FilterMode = "All"
 			updateToggle(UI.C.eraserFilterBtn[1], UI.C.eraserFilterBtn[2], UI.C.eraserFilterBtn[3], false, "Filter: Current Group", "Filter: Everything")
@@ -590,7 +633,7 @@ function UI.buildInterface()
 	UI.C.clearBtn[1].TextColor3 = Theme.Destructive
 
 	UI.C.assetListFrame = Instance.new("Frame")
-	UI.C.assetListFrame.Size = UDim2.new(1, 0, 0, 200)
+	UI.C.assetListFrame.Size = UDim2.new(1, 0, 0, 0)
 	UI.C.assetListFrame.AutomaticSize = Enum.AutomaticSize.Y
 	UI.C.assetListFrame.BackgroundTransparency = 1
 	UI.C.assetListFrame.Parent = TabAssets.frame
@@ -600,7 +643,8 @@ function UI.buildInterface()
 	alGrid.Parent = UI.C.assetListFrame
 
 	UI.C.assetSettingsFrame = Instance.new("Frame")
-	UI.C.assetSettingsFrame.Size = UDim2.new(1, 0, 0, 150)
+	UI.C.assetSettingsFrame.Size = UDim2.new(1, 0, 0, 0)
+	UI.C.assetSettingsFrame.AutomaticSize = Enum.AutomaticSize.Y
 	UI.C.assetSettingsFrame.BackgroundTransparency = 1
 	UI.C.assetSettingsFrame.Visible = false
 	UI.C.assetSettingsFrame.Parent = TabAssets.frame
@@ -612,7 +656,8 @@ function UI.buildInterface()
 	sep.Parent = UI.C.assetSettingsFrame
 	UI.C.assetSettingsName = createSectionHeader("SELECTED: ???", UI.C.assetSettingsFrame)
 	local asGrid = Instance.new("Frame")
-	asGrid.Size = UDim2.new(1, 0, 0, 80)
+	asGrid.Size = UDim2.new(1, 0, 0, 0)
+	asGrid.AutomaticSize = Enum.AutomaticSize.Y
 	asGrid.BackgroundTransparency = 1
 	asGrid.Parent = UI.C.assetSettingsFrame
 	local asgl = Instance.new("UIGridLayout")
@@ -624,10 +669,6 @@ function UI.buildInterface()
 	UI.C.assetSettingsBaseScale = {createTechInput("BASE SCALE", "1", asGrid)}
 	UI.C.assetSettingsBaseRotation = {createTechInput("BASE ROT (Y)", "0", asGrid)}
 	UI.C.assetSettingsBaseRotationX = {createTechInput("BASE ROT (X)", "0", asGrid)}
-
-	-- Update frame size to accommodate new inputs
-	UI.C.assetSettingsFrame.Size = UDim2.new(1, 0, 0, 220)
-	asGrid.Size = UDim2.new(1, 0, 0, 170)
 
 	UI.C.assetSettingsActive = {createTechToggle("Active in Brush", UI.C.assetSettingsFrame)}
 
