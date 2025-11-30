@@ -442,7 +442,7 @@ function UI.buildInterface()
 	mgLayout.Parent = modeGrid
 
 	UI.C.modeButtons = {}
-	local modeNames = {"Paint", "Line", "Path", "Fill", "Replace", "Stamp", "Volume", "Erase", "Biome"}
+	local modeNames = {"Paint", "Line", "Path", "Fill", "Replace", "Stamp", "Volume", "Erase"}
 	for _, m in ipairs(modeNames) do
 		local b, s = createTechButton(string.upper(m), modeGrid)
 		b.TextSize = 11
@@ -524,33 +524,6 @@ function UI.buildInterface()
 			updateToggle(UI.C.eraserFilterBtn[1], UI.C.eraserFilterBtn[2], UI.C.eraserFilterBtn[3], false, "Filter: Current Group", "Filter: Everything")
 		end
 	end)
-
-	-- Biome Context
-	UI.C.biomeFrame = Instance.new("Frame")
-	UI.C.biomeFrame.AutomaticSize = Enum.AutomaticSize.Y
-	UI.C.biomeFrame.Size = UDim2.new(1, 0, 0, 0)
-	UI.C.biomeFrame.BackgroundTransparency = 1
-	UI.C.biomeFrame.Visible = false
-	UI.C.biomeFrame.Parent = UI.C.contextContainer
-
-	local biomeLayout = Instance.new("UIListLayout", UI.C.biomeFrame)
-	biomeLayout.Padding = UDim.new(0, 8)
-
-	UI.C.biomeMaterialBtn = {createTechButton("TARGET: GRASS", UI.C.biomeFrame)}
-
-	UI.C.biomeMaterialList = Instance.new("ScrollingFrame")
-	UI.C.biomeMaterialList.Size = UDim2.new(1, 0, 0, 150)
-	UI.C.biomeMaterialList.BackgroundTransparency = 1
-	UI.C.biomeMaterialList.BackgroundColor3 = Theme.Panel
-	UI.C.biomeMaterialList.BackgroundTransparency = 0.1
-	UI.C.biomeMaterialList.Visible = false
-	UI.C.biomeMaterialList.Parent = UI.C.biomeFrame
-	local bml = Instance.new("UIGridLayout", UI.C.biomeMaterialList)
-	bml.CellSize = UDim2.new(0.48, 0, 0, 24)
-	bml.CellPadding = UDim2.new(0.04, 0, 0, 4)
-
-	UI.C.biomeRunBtn = {createTechButton("GENERATE IN RANGE", UI.C.biomeFrame)}
-	UI.C.biomeRunBtn[1].TextColor3 = Theme.Success
 
 	-- ASSETS TAB
 	createSectionHeader("ASSET GROUPS", TabAssets.frame)
@@ -1163,13 +1136,12 @@ function UI.updateModeButtonsUI()
 	-- Context visibility
 	UI.C.pathFrame.Visible = (State.currentMode == "Path")
 	UI.C.fillFrame.Visible = (State.currentMode == "Fill")
-	UI.C.biomeFrame.Visible = (State.currentMode == "Biome")
 	UI.C.eraserFrame.Visible = (State.currentMode == "Erase" or State.currentMode == "Replace")
 
 	-- Input visibility
-	local showBrush = (State.currentMode == "Paint" or State.currentMode == "Erase" or State.currentMode == "Replace" or State.currentMode == "Volume" or State.currentMode == "Fill" or State.currentMode == "Biome")
+	local showBrush = (State.currentMode == "Paint" or State.currentMode == "Erase" or State.currentMode == "Replace" or State.currentMode == "Volume" or State.currentMode == "Fill")
 	local showDensity = (State.currentMode == "Paint" or State.currentMode == "Volume" or State.currentMode == "Fill")
-	local showSpacing = (State.currentMode == "Paint" or State.currentMode == "Line" or State.currentMode == "Path" or State.currentMode == "Biome")
+	local showSpacing = (State.currentMode == "Paint" or State.currentMode == "Line" or State.currentMode == "Path")
 	local showDistance = (State.currentMode == "Volume")
 
 	UI.C.radiusBox[2].Visible = showBrush
