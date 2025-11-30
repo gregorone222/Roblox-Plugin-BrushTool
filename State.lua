@@ -16,6 +16,8 @@ State.isPainting = false
 State.lastPaintPosition = nil
 State.lineStartPoint = nil
 State.pathPoints = {}
+State.pathHistory = {}
+State.pathHistoryIndex = 0
 State.partToFill = nil
 State.sourceAsset = nil
 State.targetAsset = nil
@@ -72,7 +74,13 @@ State.previewPart = nil
 State.cyl = nil
 State.linePreviewPart = nil
 State.fillSelectionBox = nil
-State.ghostModel = nil
+State.ghostModel = nil -- Legacy single ghost ref
+State.ghostsPool = {} -- Pool of available ghost models
+State.activeGhosts = {} -- Currently active ghosts
+State.pendingBatch = {} -- Data for batch placement
+
+-- Config
+State.MaxPreviewGhosts = 20
 
 -- Folders
 State.assetsFolder = nil
