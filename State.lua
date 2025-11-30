@@ -61,6 +61,12 @@ State.SmartEraser = {
 	FilterMode = "All" -- "All" or "CurrentGroup"
 }
 
+-- Output Organization State
+State.Output = {
+	Mode = "PerStroke", -- "PerStroke", "Fixed", "Grouped"
+	FixedFolderName = "BrushOutput"
+}
+
 -- Preview Objects (Will be set by Core)
 State.previewPart = nil
 State.cyl = nil
