@@ -145,10 +145,12 @@ local function applyAssetTransform(asset, position, normal, overrideScale, overr
 
 	if not randomRotation then
 		local xrot, yrot, zrot
-		yrot = math.rad(math.random() * 360) 
+		yrot = 0
 		xrot, zrot = 0, 0
 
 		if State.Randomizer.Rotation.Enabled then
+			yrot = math.rad(math.random() * 360) -- Randomize Y only if enabled
+
 			if normal and State.surfaceAngleMode == "Floor" then
 				effectiveNormal = Vector3.new(0, 1, 0)
 			elseif normal and State.surfaceAngleMode == "Ceiling" then
@@ -167,7 +169,28 @@ local function applyAssetTransform(asset, position, normal, overrideScale, overr
 	end
 
 	local assetName = asset.Name:gsub("^GHOST_", "")
+	local isSticker = false
+	if assetName:match("^Sticker_") then
+		assetName = assetName:gsub("^Sticker_", "")
+		isSticker = true
+	end
+
 	local customOffset = State.assetOffsets[assetName] or 0
+
+	if isSticker then
+		local baseScale = State.assetOffsets[assetName .. "_scale"] or 1
+		local baseRotation = math.rad(State.assetOffsets[assetName .. "_rotation"] or 0)
+		local baseRotationX = math.rad(State.assetOffsets[assetName .. "_rotationX"] or 0)
+
+		-- Apply Base Scale to Random Scale
+		s = s * baseScale
+
+		-- Apply Base Rotation
+		if randomRotation then
+			randomRotation = randomRotation * CFrame.Angles(baseRotationX, baseRotation, 0)
+		end
+	end
+
 	-- "Align to Surface" is now a global setting toggled in UI
 	local shouldAlign = State.alignToSurface
 
@@ -291,17 +314,21 @@ local function applyAssetTransform(asset, position, normal, overrideScale, overr
 	return asset
 end
 
-local function animateAssetSpawn(model)
+local function animateAssetSpawn(target)
 	-- Helper to animate asset spawning (Pop effect)
-	-- Use ScaleTo to scale relative to the model's original scale.
-	-- If 'applyAssetTransform' already manipulated the parts' sizes directly,
-	-- Model:ScaleTo(1.0) sets it to 100% of its *current geometry size*.
+	local isModel = target:IsA("Model")
+	local finalSize
+	if not isModel then finalSize = target.Size end
 
 	local scaleValue = Instance.new("NumberValue")
 	scaleValue.Value = 0.01 -- Start tiny
 
-	-- Initialize model at small scale immediately (sync)
-	model:ScaleTo(0.01)
+	-- Initialize at small scale
+	if isModel then
+		target:ScaleTo(0.01)
+	else
+		target.Size = finalSize * 0.01
+	end
 
 	local tw = game:GetService("TweenService"):Create(scaleValue, TweenInfo.new(0.5, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {Value = 1})
 
@@ -309,7 +336,11 @@ local function animateAssetSpawn(model)
 	conn = scaleValue.Changed:Connect(function(val)
 		-- Safety check: use pcall in case model is destroyed mid-tween
 		pcall(function()
-			model:ScaleTo(val)
+			if isModel then
+				target:ScaleTo(val)
+			else
+				target.Size = finalSize * val
+			end
 		end)
 	end)
 
@@ -322,7 +353,28 @@ local function animateAssetSpawn(model)
 end
 
 local function placeAsset(assetToClone, position, normal, overrideScale, overrideRotation, overrideWobble)
-	local clone = assetToClone:Clone()
+	local clone
+
+	if assetToClone:IsA("Decal") or assetToClone:IsA("Texture") then
+		-- "Sticker Mode" logic: Create a host part
+		local hostPart = Instance.new("Part")
+		hostPart.Name = "Sticker_" .. assetToClone.Name
+		hostPart.Transparency = 1
+		hostPart.Size = Vector3.new(1, 0.05, 1) -- Thin plate
+		hostPart.CanCollide = false
+		hostPart.Anchored = true
+		hostPart.CastShadow = false
+
+		local sticker = assetToClone:Clone()
+		sticker.Parent = hostPart
+		if sticker:IsA("Decal") then sticker.Face = Enum.NormalId.Top end
+		if sticker:IsA("Texture") then sticker.Face = Enum.NormalId.Top end
+
+		clone = hostPart
+	else
+		clone = assetToClone:Clone()
+	end
+
 	randomizeProperties(clone)
 	if clone:IsA("Model") and not clone.PrimaryPart then
 		for _, v in ipairs(clone:GetDescendants()) do if v:IsA("BasePart") then clone.PrimaryPart = v; break end end
@@ -425,20 +477,29 @@ function Core.updateGhostPreview(position, normal)
 	end
 
 	if not State.nextStampScale then
-		local smin = Utils.parseNumber(UI.C.scaleMinBox[1].Text, 0.8)
-		local smax = Utils.parseNumber(UI.C.scaleMaxBox[1].Text, 1.2)
-		if smin <= 0 then smin = 0.1 end; if smax < smin then smax = smin end
-		State.nextStampScale = Utils.randFloat(smin, smax)
+		if State.Randomizer.Scale.Enabled then
+			local smin = Utils.parseNumber(UI.C.scaleMinBox[1].Text, 0.8)
+			local smax = Utils.parseNumber(UI.C.scaleMaxBox[1].Text, 1.2)
+			if smin <= 0 then smin = 0.1 end; if smax < smin then smax = smin end
+			State.nextStampScale = Utils.randFloat(smin, smax)
+		else
+			State.nextStampScale = 1.0
+		end
 	end
 
 	if not State.nextStampRotation then
-		local rotXMin = math.rad(Utils.parseNumber(UI.C.rotXMinBox[1].Text, 0))
-		local rotXMax = math.rad(Utils.parseNumber(UI.C.rotXMaxBox[1].Text, 0))
-		local rotZMin = math.rad(Utils.parseNumber(UI.C.rotZMinBox[1].Text, 0))
-		local rotZMax = math.rad(Utils.parseNumber(UI.C.rotZMaxBox[1].Text, 0))
-		local xrot = Utils.randFloat(rotXMin, rotXMax)
-		local yrot = math.rad(math.random() * 360)
-		local zrot = Utils.randFloat(rotZMin, rotZMax)
+		local xrot, yrot, zrot = 0, 0, 0
+
+		if State.Randomizer.Rotation.Enabled then
+			local rotXMin = math.rad(Utils.parseNumber(UI.C.rotXMinBox[1].Text, 0))
+			local rotXMax = math.rad(Utils.parseNumber(UI.C.rotXMaxBox[1].Text, 0))
+			local rotZMin = math.rad(Utils.parseNumber(UI.C.rotZMinBox[1].Text, 0))
+			local rotZMax = math.rad(Utils.parseNumber(UI.C.rotZMaxBox[1].Text, 0))
+			xrot = Utils.randFloat(rotXMin, rotXMax)
+			yrot = math.rad(math.random() * 360)
+			zrot = Utils.randFloat(rotZMin, rotZMax)
+		end
+
 		if State.surfaceAngleMode == "Floor" and normal then
 			xrot = 0; zrot = 0
 		elseif State.surfaceAngleMode == "Ceiling" and normal then
@@ -455,8 +516,22 @@ function Core.updateGhostPreview(position, normal)
 
 	if State.ghostModel then State.ghostModel:Destroy() end
 
-	State.ghostModel = State.nextStampAsset:Clone()
-	State.ghostModel.Name = "GHOST_" .. State.nextStampAsset.Name
+	if State.nextStampAsset:IsA("Decal") or State.nextStampAsset:IsA("Texture") then
+		local hostPart = Instance.new("Part")
+		hostPart.Name = "GHOST_Sticker_" .. State.nextStampAsset.Name
+		hostPart.Size = Vector3.new(1, 0.05, 1)
+		hostPart.Transparency = 1
+		hostPart.CanCollide = false
+		hostPart.Anchored = true
+		local sticker = State.nextStampAsset:Clone()
+		sticker.Parent = hostPart
+		if sticker:IsA("Decal") then sticker.Face = Enum.NormalId.Top end
+		if sticker:IsA("Texture") then sticker.Face = Enum.NormalId.Top end
+		State.ghostModel = hostPart
+	else
+		State.ghostModel = State.nextStampAsset:Clone()
+		State.ghostModel.Name = "GHOST_" .. State.nextStampAsset.Name
+	end
 
 	if State.ghostModel:IsA("Model") and not State.ghostModel.PrimaryPart then
 		for _, v in ipairs(State.ghostModel:GetDescendants()) do if v:IsA("BasePart") then State.ghostModel.PrimaryPart = v; break end end
@@ -467,6 +542,9 @@ function Core.updateGhostPreview(position, normal)
 		for _, d in ipairs(State.ghostModel:GetDescendants()) do table.insert(partsToStyle, d) end
 	elseif State.ghostModel:IsA("BasePart") then
 		table.insert(partsToStyle, State.ghostModel)
+	elseif State.ghostModel:IsA("Decal") or State.ghostModel:IsA("Texture") then
+		-- This case shouldn't be reached if we wrap them in parts in updateGhostPreview
+		-- But we need to handle the creation of the Ghost for Decals/Textures first.
 	end
 
 	-- Calculate Color/Transparency random shifts once per "Stamp cycle" to avoid flickering
@@ -518,9 +596,14 @@ function Core.updateGhostPreview(position, normal)
 				v = math.clamp(v + shift.v, 0, 1)
 				desc.Color = Color3.fromHSV(h, s, v)
 			else
-				desc.Color = Constants.Theme.Accent
+				-- Only override color for actual parts if it's not a Sticker Host
+				-- We know it's a Sticker Host if it has a child Decal or Texture named same as source?
+				-- Or just check if the model name starts with GHOST_Sticker
+				if not State.ghostModel.Name:find("Sticker") then
+					desc.Color = Constants.Theme.Accent
+				end
 			end
-		elseif desc:IsA("Decal") or desc:IsA("Texture") then
+		elseif (desc:IsA("Decal") or desc:IsA("Texture")) and not State.ghostModel.Name:find("Sticker") then
 			desc:Destroy()
 		end
 	end
@@ -757,9 +840,11 @@ function Core.paintAlongLine(startPos, endPos)
 			local targetNormal = Vector3.new(0, 1, 0)
 			local validSurface = true
 
+			local resultInstance = nil
 			if result then
 				targetPos = result.Position
 				targetNormal = result.Normal
+				resultInstance = result.Instance
 				if not Core.isMaterialAllowed(result.Material) then validSurface = false end
 				if not Core.isSlopeAllowed(result.Normal) then validSurface = false end
 			else
@@ -784,6 +869,74 @@ function Core.paintAlongLine(startPos, endPos)
 
 	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
 	ChangeHistoryService:SetWaypoint("Brush - After Line Paint")
+end
+
+function Core.populateBiome()
+	local range = math.max(1.0, Utils.parseNumber(UI.C.radiusBox[1].Text, 100.0))
+	local spacing = math.max(1.0, Utils.parseNumber(UI.C.spacingBox[1].Text, 5.0))
+	-- TargetMaterial is replaced by Whitelist
+
+	ChangeHistoryService:SetWaypoint("Brush - Before Biome Populate")
+	local container = getWorkspaceContainer()
+	local groupFolder = Instance.new("Folder")
+	groupFolder.Name = "BrushBiome_" .. tostring(math.floor(os.time()))
+	groupFolder.Parent = container
+
+	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
+	if not targetGroup then groupFolder:Destroy(); return end
+	local activeAssets = {}
+	for _, asset in ipairs(targetGroup:GetChildren()) do
+		local isActive = State.assetOffsets[asset.Name .. "_active"]
+		if isActive == nil then isActive = true end
+		if isActive then table.insert(activeAssets, asset) end
+	end
+
+	if #activeAssets > 0 then
+		local center = workspace.CurrentCamera.Focus.Position
+
+		local startX = center.X - range
+		local endX = center.X + range
+		local startZ = center.Z - range
+		local endZ = center.Z + range
+
+		local processed = 0
+
+		for x = startX, endX, spacing do
+			for z = startZ, endZ, spacing do
+				local rayOrigin = Vector3.new(x, center.Y + 10000, z) -- Scan from very high up to catch mountains
+				local rayDir = Vector3.new(0, -20000, 0)
+
+				local params = RaycastParams.new()
+				params.FilterDescendantsInstances = { State.previewFolder, container, State.pathPreviewFolder }
+				params.FilterType = Enum.RaycastFilterType.Exclude
+
+				local result = workspace:Raycast(rayOrigin, rayDir, params)
+
+				if result then
+					local valid = true
+					-- Check whitelist instead of single target
+					if not State.Biome.Whitelist[result.Material] then valid = false end
+
+					if not Core.isSlopeAllowed(result.Normal) then valid = false end
+					if not Core.isHeightAllowed(result.Position) then valid = false end
+
+					if valid then
+						local assetToClone = getRandomWeightedAsset(activeAssets)
+						if assetToClone then
+							local placed = placeAsset(assetToClone, result.Position, result.Normal)
+							if placed then placed.Parent = groupFolder end
+						end
+					end
+				end
+
+				processed = processed + 1
+				if processed % 500 == 0 then task.wait() end
+			end
+		end
+	end
+
+	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
+	ChangeHistoryService:SetWaypoint("Brush - After Biome Populate")
 end
 
 function Core.fillSelectedPart()
