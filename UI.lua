@@ -165,7 +165,7 @@ local function createTechToggle(text, parent)
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Parent = container
 
-	return btn, inner, label
+	return btn, inner, label, container
 end
 
 local function createTechInput(labelText, defaultValue, parent)
@@ -220,6 +220,102 @@ local function createSectionHeader(text, parent)
 	h.TextXAlignment = Enum.TextXAlignment.Left
 	h.Parent = parent
 	return h
+end
+
+local function createCollapsibleSection(text, parent, isOpen, layoutOrder)
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(1, 0, 0, 0)
+	container.AutomaticSize = Enum.AutomaticSize.Y
+	container.BackgroundTransparency = 1
+	if layoutOrder then container.LayoutOrder = layoutOrder end
+	container.Parent = parent
+
+	-- Layout for the container (Header + Content)
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 4)
+	layout.Parent = container
+
+	-- Header Button
+	local headerBtn = Instance.new("TextButton")
+	headerBtn.LayoutOrder = 1
+	headerBtn.Size = UDim2.new(1, 0, 0, 28)
+	headerBtn.BackgroundColor3 = Theme.Panel
+	headerBtn.AutoButtonColor = false
+	headerBtn.Text = ""
+	headerBtn.Parent = container
+
+	local headerStroke = Instance.new("UIStroke")
+	headerStroke.Color = Theme.Border
+	headerStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	headerStroke.Parent = headerBtn
+
+	local icon = Instance.new("TextLabel")
+	icon.Size = UDim2.new(0, 28, 1, 0)
+	icon.BackgroundTransparency = 1
+	icon.Text = isOpen and "v" or ">"
+	icon.Font = Theme.FontTech
+	icon.TextSize = 12
+	icon.TextColor3 = Theme.Accent
+	icon.Parent = headerBtn
+
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1, -36, 1, 0)
+	title.Position = UDim2.new(0, 32, 0, 0)
+	title.BackgroundTransparency = 1
+	title.Text = string.upper(text)
+	title.Font = Theme.FontTech
+	title.TextSize = 12
+	title.TextColor3 = Theme.Text
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Parent = headerBtn
+
+	-- Content Frame
+	local content = Instance.new("Frame")
+	content.LayoutOrder = 2
+	content.Size = UDim2.new(1, 0, 0, 0)
+	content.AutomaticSize = Enum.AutomaticSize.Y
+	content.BackgroundTransparency = 1
+	content.Visible = isOpen
+	content.Parent = container
+
+	-- Padding inside content
+	local contentPad = Instance.new("UIPadding")
+	contentPad.PaddingTop = UDim.new(0, 8)
+	contentPad.PaddingBottom = UDim.new(0, 8)
+	contentPad.PaddingLeft = UDim.new(0, 4)
+	contentPad.PaddingRight = UDim.new(0, 4)
+	contentPad.Parent = content
+
+	-- List layout for content items
+	local contentLayout = Instance.new("UIListLayout")
+	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	contentLayout.Padding = UDim.new(0, 8)
+	contentLayout.Parent = content
+
+	-- Toggle Logic
+	headerBtn.MouseButton1Click:Connect(function()
+		isOpen = not isOpen
+		content.Visible = isOpen
+		icon.Text = isOpen and "v" or ">"
+		if isOpen then
+			headerBtn.BackgroundColor3 = Color3.fromHex("2a2a2a")
+			title.TextColor3 = Theme.Accent
+		else
+			headerBtn.BackgroundColor3 = Theme.Panel
+			title.TextColor3 = Theme.Text
+		end
+	end)
+
+	-- Hover Effect
+	headerBtn.MouseEnter:Connect(function()
+		if not isOpen then headerBtn.BackgroundColor3 = Color3.fromHex("252525") end
+	end)
+	headerBtn.MouseLeave:Connect(function()
+		if not isOpen then headerBtn.BackgroundColor3 = Theme.Panel end
+	end)
+
+	return container, content
 end
 
 local function switchTab(tabName)
@@ -294,22 +390,13 @@ local function createTab(name, label, tabBar, tabContent)
 	return {frame = frame}
 end
 
-local layoutOrderCounter = 1
-local function createOrderedSectionHeader(text, parent)
-	local h = createSectionHeader(text, parent)
-	h.LayoutOrder = layoutOrderCounter
-	layoutOrderCounter = layoutOrderCounter + 1
-	return h
-end
-
-local function createOrderedRandomizerGroup(parent, toggleText)
+local function createOrderedRandomizerGroup(parent, toggleText, layoutOrder)
 	local container = Instance.new("Frame")
 	container.AutomaticSize = Enum.AutomaticSize.Y
 	container.Size = UDim2.new(1, 0, 0, 0)
 	container.BackgroundTransparency = 1
-	container.LayoutOrder = layoutOrderCounter
+	if layoutOrder then container.LayoutOrder = layoutOrder end
 	container.Parent = parent
-	layoutOrderCounter = layoutOrderCounter + 1
 
 	local layout = Instance.new("UIListLayout")
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -771,22 +858,30 @@ function UI.buildInterface()
 	plGrid.Parent = UI.C.presetListFrame
 
 	-- TUNING TAB
-	createOrderedSectionHeader("TRANSFORMATION RANDOMIZER", TabTuning.frame)
+	local tuningLayoutOrder = 1
 
+	-- TRANSFORMATION RANDOMIZER SECTION
+	local randWrapper, randContent = createCollapsibleSection("TRANSFORMATION RANDOMIZER", TabTuning.frame, false, tuningLayoutOrder)
+	tuningLayoutOrder = tuningLayoutOrder + 1
+
+	local randOrder = 1
 	-- Scale
-	UI.C.randomizeScaleToggle, UI.C.scaleGrid, UI.C.randomizeScaleBtn = createOrderedRandomizerGroup(TabTuning.frame, "Randomize Scale")
+	UI.C.randomizeScaleToggle, UI.C.scaleGrid, UI.C.randomizeScaleBtn = createOrderedRandomizerGroup(randContent, "Randomize Scale", randOrder)
+	randOrder = randOrder + 1
 	UI.C.scaleMinBox = {createTechInput("SCALE MIN", "0.8", UI.C.scaleGrid)}
 	UI.C.scaleMaxBox = {createTechInput("SCALE MAX", "1.2", UI.C.scaleGrid)}
 
 	-- Rotation
-	UI.C.randomizeRotationToggle, UI.C.rotationGrid, UI.C.randomizeRotationBtn = createOrderedRandomizerGroup(TabTuning.frame, "Randomize Rotation (X/Z)")
+	UI.C.randomizeRotationToggle, UI.C.rotationGrid, UI.C.randomizeRotationBtn = createOrderedRandomizerGroup(randContent, "Randomize Rotation (X/Z)", randOrder)
+	randOrder = randOrder + 1
 	UI.C.rotXMinBox = {createTechInput("ROT X MIN", "0", UI.C.rotationGrid)}
 	UI.C.rotXMaxBox = {createTechInput("ROT X MAX", "0", UI.C.rotationGrid)}
 	UI.C.rotZMinBox = {createTechInput("ROT Z MIN", "0", UI.C.rotationGrid)}
 	UI.C.rotZMaxBox = {createTechInput("ROT Z MAX", "0", UI.C.rotationGrid)}
 
 	-- Color
-	UI.C.randomizeColorToggle, UI.C.colorGrid, UI.C.randomizeColorBtn = createOrderedRandomizerGroup(TabTuning.frame, "Randomize Color (HSV)")
+	UI.C.randomizeColorToggle, UI.C.colorGrid, UI.C.randomizeColorBtn = createOrderedRandomizerGroup(randContent, "Randomize Color (HSV)", randOrder)
+	randOrder = randOrder + 1
 	UI.C.hueMinBox = {createTechInput("HUE MIN", "0", UI.C.colorGrid)}
 	UI.C.hueMaxBox = {createTechInput("HUE MAX", "0", UI.C.colorGrid)}
 	UI.C.satMinBox = {createTechInput("SAT MIN", "0", UI.C.colorGrid)}
@@ -795,32 +890,45 @@ function UI.buildInterface()
 	UI.C.valMaxBox = {createTechInput("VAL MAX", "0", UI.C.colorGrid)}
 
 	-- Transparency
-	UI.C.randomizeTransparencyToggle, UI.C.transparencyGrid, UI.C.randomizeTransparencyBtn = createOrderedRandomizerGroup(TabTuning.frame, "Randomize Transparency")
+	UI.C.randomizeTransparencyToggle, UI.C.transparencyGrid, UI.C.randomizeTransparencyBtn = createOrderedRandomizerGroup(randContent, "Randomize Transparency", randOrder)
+	randOrder = randOrder + 1
 	UI.C.transMinBox = {createTechInput("TRNS MIN", "0", UI.C.transparencyGrid)}
 	UI.C.transMaxBox = {createTechInput("TRNS MAX", "0", UI.C.transparencyGrid)}
 
 	-- Wobble
-	UI.C.randomizeWobbleToggle, UI.C.wobbleGrid, UI.C.randomizeWobbleBtn = createOrderedRandomizerGroup(TabTuning.frame, "Wobble (Tilt)")
+	UI.C.randomizeWobbleToggle, UI.C.wobbleGrid, UI.C.randomizeWobbleBtn = createOrderedRandomizerGroup(randContent, "Wobble (Tilt)", randOrder)
+	randOrder = randOrder + 1
 	UI.C.wobbleXMaxBox = {createTechInput("X ANGLE (Deg)", "0", UI.C.wobbleGrid)}
 	UI.C.wobbleZMaxBox = {createTechInput("Z ANGLE (Deg)", "0", UI.C.wobbleGrid)}
 
-	createOrderedSectionHeader("ENVIRONMENT CONTROL", TabTuning.frame)
-	UI.C.smartSnapBtn = {createTechToggle("Smart Surface Snap", TabTuning.frame)}
-	UI.C.smartSnapBtn[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
-	UI.C.snapToGridBtn = {createTechToggle("Snap to Grid", TabTuning.frame)}
-	UI.C.snapToGridBtn[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
-	UI.C.gridSizeBox = {createTechInput("GRID SIZE", "4", TabTuning.frame)}
-	UI.C.gridSizeBox[2].LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
-	UI.C.ghostTransparencyBox = {createTechInput("GHOST TRANS", "0.65", TabTuning.frame)}
-	UI.C.ghostTransparencyBox[2].LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
-	UI.C.ghostLimitBox = {createTechInput("GHOST LIMIT", "20", TabTuning.frame)}
-	UI.C.ghostLimitBox[2].LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+	-- ENVIRONMENT CONTROL SECTION
+	local envWrapper, envContent = createCollapsibleSection("ENVIRONMENT CONTROL", TabTuning.frame, false, tuningLayoutOrder)
+	tuningLayoutOrder = tuningLayoutOrder + 1
+	local envOrder = 1
+
+	UI.C.smartSnapBtn = {createTechToggle("Smart Surface Snap", envContent)}
+	UI.C.smartSnapBtn[4].LayoutOrder = envOrder; envOrder = envOrder + 1
+
+	UI.C.snapToGridBtn = {createTechToggle("Snap to Grid", envContent)}
+	UI.C.snapToGridBtn[4].LayoutOrder = envOrder; envOrder = envOrder + 1
+
+	UI.C.gridSizeBox = {createTechInput("GRID SIZE", "4", envContent)}
+	UI.C.gridSizeBox[2].LayoutOrder = envOrder; envOrder = envOrder + 1
+
+	UI.C.ghostTransparencyBox = {createTechInput("GHOST TRANS", "0.65", envContent)}
+	UI.C.ghostTransparencyBox[2].LayoutOrder = envOrder; envOrder = envOrder + 1
+
+	UI.C.ghostLimitBox = {createTechInput("GHOST LIMIT", "20", envContent)}
+	UI.C.ghostLimitBox[2].LayoutOrder = envOrder; envOrder = envOrder + 1
 
 
-	createOrderedSectionHeader("SURFACE LOCK", TabTuning.frame)
+	-- SURFACE LOCK SECTION
+	local surfWrapper, surfContent = createCollapsibleSection("SURFACE LOCK", TabTuning.frame, false, tuningLayoutOrder)
+	tuningLayoutOrder = tuningLayoutOrder + 1
+	local surfOrder = 1
 
-	UI.C.assetSettingsAlign = {createTechToggle("Align Asset to Surface", TabTuning.frame)}
-	UI.C.assetSettingsAlign[2].LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+	UI.C.assetSettingsAlign = {createTechToggle("Align Asset to Surface", surfContent)}
+	UI.C.assetSettingsAlign[4].LayoutOrder = surfOrder; surfOrder = surfOrder + 1
 
 	UI.C.assetSettingsAlign[1].MouseButton1Click:Connect(function()
 		State.alignToSurface = not State.alignToSurface
@@ -830,8 +938,8 @@ function UI.buildInterface()
 	local surfaceGrid = Instance.new("Frame")
 	surfaceGrid.Size = UDim2.new(1, 0, 0, 80)
 	surfaceGrid.BackgroundTransparency = 1
-	surfaceGrid.Parent = TabTuning.frame
-	surfaceGrid.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+	surfaceGrid.LayoutOrder = surfOrder; surfOrder = surfOrder + 1
+	surfaceGrid.Parent = surfContent
 	local slLayout = Instance.new("UIGridLayout")
 	slLayout.CellSize = UDim2.new(0.48, 0, 0, 32)
 	slLayout.CellPadding = UDim2.new(0.04, 0, 0, 8)
@@ -848,10 +956,13 @@ function UI.buildInterface()
 		end)
 	end
 
-	-- MATERIAL FILTER UI
-	createOrderedSectionHeader("SURFACE MATERIAL FILTER", TabTuning.frame)
-	UI.C.materialFilterToggle = {createTechToggle("Enable Material Filter", TabTuning.frame)}
-	UI.C.materialFilterToggle[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+	-- MATERIAL FILTER UI SECTION
+	local matWrapper, matContent = createCollapsibleSection("SURFACE MATERIAL FILTER", TabTuning.frame, false, tuningLayoutOrder)
+	tuningLayoutOrder = tuningLayoutOrder + 1
+	local matOrder = 1
+
+	UI.C.materialFilterToggle = {createTechToggle("Enable Material Filter", matContent)}
+	UI.C.materialFilterToggle[4].LayoutOrder = matOrder; matOrder = matOrder + 1
 
 	UI.C.materialFilterToggle[1].MouseButton1Click:Connect(function()
 		State.MaterialFilter.Enabled = not State.MaterialFilter.Enabled
@@ -861,8 +972,8 @@ function UI.buildInterface()
 	local matFilterContainer = Instance.new("Frame")
 	matFilterContainer.Size = UDim2.new(1, 0, 0, 160)
 	matFilterContainer.BackgroundTransparency = 1
-	matFilterContainer.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
-	matFilterContainer.Parent = TabTuning.frame
+	matFilterContainer.LayoutOrder = matOrder; matOrder = matOrder + 1
+	matFilterContainer.Parent = matContent
 
 	local mfTools = Instance.new("Frame")
 	mfTools.Size = UDim2.new(1, 0, 0, 24)
@@ -982,11 +1093,13 @@ function UI.buildInterface()
 		UI.updateAllToggles()
 	end)
 
-	-- SLOPE MASK UI
-	createOrderedSectionHeader("SLOPE MASK", TabTuning.frame)
+	-- SLOPE MASK UI SECTION
+	local slopeWrapper, slopeContent = createCollapsibleSection("SLOPE MASK", TabTuning.frame, false, tuningLayoutOrder)
+	tuningLayoutOrder = tuningLayoutOrder + 1
+	local slopeOrder = 1
 
-	UI.C.slopeMaskToggle = {createTechToggle("Enable Slope Mask", TabTuning.frame)}
-	UI.C.slopeMaskToggle[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+	UI.C.slopeMaskToggle = {createTechToggle("Enable Slope Mask", slopeContent)}
+	UI.C.slopeMaskToggle[4].LayoutOrder = slopeOrder; slopeOrder = slopeOrder + 1
 
 	UI.C.slopeMaskToggle[1].MouseButton1Click:Connect(function()
 		State.SlopeFilter.Enabled = not State.SlopeFilter.Enabled
@@ -996,8 +1109,8 @@ function UI.buildInterface()
 	UI.C.slopeGrid = Instance.new("Frame")
 	UI.C.slopeGrid.Size = UDim2.new(1, 0, 0, 40)
 	UI.C.slopeGrid.BackgroundTransparency = 1
-	UI.C.slopeGrid.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
-	UI.C.slopeGrid.Parent = TabTuning.frame
+	UI.C.slopeGrid.LayoutOrder = slopeOrder; slopeOrder = slopeOrder + 1
+	UI.C.slopeGrid.Parent = slopeContent
 
 	local slopeLayout = Instance.new("UIGridLayout")
 	slopeLayout.CellSize = UDim2.new(0.48, 0, 0, 40)
@@ -1015,11 +1128,13 @@ function UI.buildInterface()
 		State.SlopeFilter.MaxAngle = Utils.parseNumber(UI.C.slopeMaxBox[1].Text, 45)
 	end)
 
-	-- HEIGHT MASK UI
-	createOrderedSectionHeader("HEIGHT MASK (Y-LEVEL)", TabTuning.frame)
+	-- HEIGHT MASK UI SECTION
+	local heightWrapper, heightContent = createCollapsibleSection("HEIGHT MASK (Y-LEVEL)", TabTuning.frame, false, tuningLayoutOrder)
+	tuningLayoutOrder = tuningLayoutOrder + 1
+	local heightOrder = 1
 
-	UI.C.heightMaskToggle = {createTechToggle("Enable Height Mask", TabTuning.frame)}
-	UI.C.heightMaskToggle[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+	UI.C.heightMaskToggle = {createTechToggle("Enable Height Mask", heightContent)}
+	UI.C.heightMaskToggle[4].LayoutOrder = heightOrder; heightOrder = heightOrder + 1
 
 	UI.C.heightMaskToggle[1].MouseButton1Click:Connect(function()
 		State.HeightFilter.Enabled = not State.HeightFilter.Enabled
@@ -1029,8 +1144,8 @@ function UI.buildInterface()
 	UI.C.heightGrid = Instance.new("Frame")
 	UI.C.heightGrid.Size = UDim2.new(1, 0, 0, 40)
 	UI.C.heightGrid.BackgroundTransparency = 1
-	UI.C.heightGrid.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
-	UI.C.heightGrid.Parent = TabTuning.frame
+	UI.C.heightGrid.LayoutOrder = heightOrder; heightOrder = heightOrder + 1
+	UI.C.heightGrid.Parent = heightContent
 
 	local heightLayout = Instance.new("UIGridLayout")
 	heightLayout.CellSize = UDim2.new(0.48, 0, 0, 40)
@@ -1048,11 +1163,13 @@ function UI.buildInterface()
 		State.HeightFilter.MaxHeight = Utils.parseNumber(UI.C.maxHeightBox[1].Text, 500)
 	end)
 
-	-- PHYSICS DROP UI
-	createOrderedSectionHeader("PHYSICS SIMULATION", TabTuning.frame)
+	-- PHYSICS DROP UI SECTION
+	local physWrapper, physContent = createCollapsibleSection("PHYSICS SIMULATION", TabTuning.frame, false, tuningLayoutOrder)
+	tuningLayoutOrder = tuningLayoutOrder + 1
+	local physOrder = 1
 
-	UI.C.physicsDropToggle = {createTechToggle("Enable Physics Drop", TabTuning.frame)}
-	UI.C.physicsDropToggle[1].Parent.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
+	UI.C.physicsDropToggle = {createTechToggle("Enable Physics Drop", physContent)}
+	UI.C.physicsDropToggle[4].LayoutOrder = physOrder; physOrder = physOrder + 1
 
 	UI.C.physicsDropToggle[1].MouseButton1Click:Connect(function()
 		State.PhysicsDrop.Enabled = not State.PhysicsDrop.Enabled
@@ -1062,8 +1179,8 @@ function UI.buildInterface()
 	UI.C.physicsGrid = Instance.new("Frame")
 	UI.C.physicsGrid.Size = UDim2.new(1, 0, 0, 40)
 	UI.C.physicsGrid.BackgroundTransparency = 1
-	UI.C.physicsGrid.LayoutOrder = layoutOrderCounter; layoutOrderCounter = layoutOrderCounter + 1
-	UI.C.physicsGrid.Parent = TabTuning.frame
+	UI.C.physicsGrid.LayoutOrder = physOrder; physOrder = physOrder + 1
+	UI.C.physicsGrid.Parent = physContent
 
 	local physLayout = Instance.new("UIGridLayout")
 	physLayout.CellSize = UDim2.new(0.48, 0, 0, 40)
@@ -1396,6 +1513,16 @@ function UI.updateAssetUIList()
 
 	local children = targetGroup:GetChildren()
 
+	-- Sort children: Favorites first, then Alphabetical
+	table.sort(children, function(a, b)
+		local favA = State.assetOffsets[a.Name .. "_isFavorite"] or false
+		local favB = State.assetOffsets[b.Name .. "_isFavorite"] or false
+		if favA ~= favB then
+			return favA -- true comes before false
+		end
+		return a.Name < b.Name
+	end)
+
 	for _, asset in ipairs(children) do
 		local isActive = State.assetOffsets[asset.Name .. "_active"]
 		if isActive == nil then isActive = true end
@@ -1444,6 +1571,23 @@ function UI.updateAssetUIList()
 		minusBtn.Visible = isActive
 		minusBtn.Parent = btn
 		minusBtn.MouseButton1Click:Connect(function() updateZoom(-0.1) end)
+
+		-- Favorites Button
+		local isFav = State.assetOffsets[asset.Name .. "_isFavorite"] or false
+		local favBtn = Instance.new("TextButton")
+		favBtn.Size = UDim2.new(0, 20, 0, 20)
+		favBtn.Position = UDim2.new(0, 4, 0, 28)
+		favBtn.Text = isFav and "★" or "☆"
+		favBtn.BackgroundColor3 = Theme.Background
+		favBtn.TextColor3 = isFav and Theme.Warning or Theme.TextDim
+		favBtn.Visible = isActive
+		favBtn.Parent = btn
+
+		favBtn.MouseButton1Click:Connect(function()
+			State.assetOffsets[asset.Name .. "_isFavorite"] = not isFav
+			State.persistOffsets()
+			UI.updateAssetUIList()
+		end)
 
 		local deleteBtn = Instance.new("TextButton")
 		deleteBtn.Size = UDim2.new(0, 20, 0, 20)
