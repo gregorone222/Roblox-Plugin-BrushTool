@@ -722,12 +722,16 @@ function Core.updatePreview()
 		local surfacePos, normal = Core.findSurfacePositionAndNormal()
 
 		if surfacePos and normal then
-			State.previewPart.Parent = State.previewFolder
-			State.previewPart.Shape = Enum.PartType.Cylinder
-			State.previewPart.Size = Vector3.new(0.02, radius*2, radius*2)
-			State.previewPart.Color = Color3.fromRGB(80, 255, 80)
-			if State.currentMode == "Replace" then State.previewPart.Color = Color3.fromRGB(80, 180, 255)
-			elseif State.currentMode == "Erase" then State.previewPart.Color = Color3.fromRGB(255, 80, 80) end
+			if State.currentMode == "Stamp" then
+				State.previewPart.Parent = nil
+			else
+				State.previewPart.Parent = State.previewFolder
+				State.previewPart.Shape = Enum.PartType.Cylinder
+				State.previewPart.Size = Vector3.new(0.02, radius*2, radius*2)
+				State.previewPart.Color = Color3.fromRGB(80, 255, 80)
+				if State.currentMode == "Replace" then State.previewPart.Color = Color3.fromRGB(80, 180, 255)
+				elseif State.currentMode == "Erase" then State.previewPart.Color = Color3.fromRGB(255, 80, 80) end
+			end
 
 			local pos = surfacePos
 			local look = Vector3.new(1, 0, 0)
