@@ -12,7 +12,7 @@ UI.init(plugin, State, Constants, Utils)
 Core.init(plugin, State, UI, Constants, Utils)
 
 -- Main Toolbar
-local toolbar = plugin:CreateToolbar("Brush Tool V8")
+local toolbar = plugin:CreateToolbar("Brush Tool V1")
 local toolbarBtn = toolbar:CreateButton("Brush", "Open Brush Tool", "rbxassetid://1507949203")
 
 toolbarBtn.Click:Connect(function()
