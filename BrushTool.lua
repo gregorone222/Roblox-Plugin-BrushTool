@@ -111,11 +111,7 @@ UI.C.addBtn[1].MouseButton1Click:Connect(function()
 	UI.updateAssetUIList()
 end)
 
-UI.C.clearBtn[1].MouseButton1Click:Connect(function()
-	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
-	if targetGroup then targetGroup:ClearAllChildren() end
-	UI.updateAssetUIList()
-end)
+-- Removed Clear All connection here because it is handled in UI.lua with confirmation
 
 -- Preset Signals
 UI.C.savePresetBtn[1].MouseButton1Click:Connect(function()
