@@ -365,21 +365,7 @@ local function placeAsset(assetToClone, position, normal, scale, rotation, wobbl
 		for _, v in ipairs(clone:GetDescendants()) do if v:IsA("BasePart") then clone.PrimaryPart = v; break end end
 	end
 
-	if State.PhysicsDrop.Enabled then
-		local dropHeight = 2.0
-		applyAssetTransform(clone, position + (normal * dropHeight), normal, scale, rotation, wobble)
-		for _, desc in ipairs(clone:GetDescendants()) do if desc:IsA("BasePart") then desc.Anchored = false; desc.CanCollide = true end end
-		if clone:IsA("BasePart") then clone.Anchored = false; clone.CanCollide = true end
-		task.delay(State.PhysicsDrop.Duration, function()
-			if clone and clone.Parent then
-				if clone:IsA("Model") then
-					for _, d in ipairs(clone:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false end end
-				elseif clone:IsA("BasePart") then clone.Anchored = true end
-			end
-		end)
-	else
-		applyAssetTransform(clone, position, normal, scale, rotation, wobble)
-	end
+	applyAssetTransform(clone, position, normal, scale, rotation, wobble)
 	animateAssetSpawn(clone)
 	return clone
 end
