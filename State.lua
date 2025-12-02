@@ -52,12 +52,6 @@ State.HeightFilter = {
 	MaxHeight = 500
 }
 
--- Physics Drop State
-State.PhysicsDrop = {
-	Enabled = false,
-	Duration = 1.0
-}
-
 -- Smart Eraser/Replacer State
 State.SmartEraser = {
 	FilterMode = "All" -- "All" or "CurrentGroup"
