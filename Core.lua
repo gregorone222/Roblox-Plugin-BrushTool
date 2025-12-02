@@ -1138,7 +1138,7 @@ function Core.updatePathPreview()
 	for i, pt in ipairs(State.pathPoints) do
 		local p = Instance.new("Part")
 		p.Name = "Point" .. i
-		p.Size = Vector3.new(0.5, 0.5, 0.5)
+		p.Size = Vector3.new(0.8, 0.8, 0.8)
 		p.Shape = Enum.PartType.Ball
 		p.Anchored = true; p.CanCollide = false
 		p.Color = Constants.Theme.Accent
@@ -1168,7 +1168,7 @@ function Core.updatePathPreview()
 			seg.Material = Enum.Material.Neon
 			seg.Color = Constants.Theme.Warning
 			local dist = (nextPos - lastPos).Magnitude
-			seg.Size = Vector3.new(0.1, 0.1, dist)
+			seg.Size = Vector3.new(0.25, 0.25, dist)
 			seg.CFrame = CFrame.lookAt(lastPos, nextPos) * CFrame.new(0, 0, -dist/2)
 			seg.Parent = State.pathPreviewFolder
 
