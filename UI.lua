@@ -351,7 +351,7 @@ end
 local function createTab(name, label, tabBar, tabContent)
 	local btn = Instance.new("TextButton")
 	btn.Name = name
-	btn.Size = UDim2.new(0.25, 0, 1, 0)
+	btn.Size = UDim2.new(0.2, 0, 1, 0)
 	btn.BackgroundTransparency = 1
 	btn.Text = label
 	btn.Font = Theme.FontMain
@@ -435,7 +435,7 @@ function UI.init(plugin, pState, pConstants, pUtils)
 		Enum.InitialDockState.Float,
 		false, false, 300, 500, 250, 300
 	)
-	UI.widget = plugin:CreateDockWidgetPluginGui("BrushToolWidgetV8", widgetInfo)
+	UI.widget = plugin:CreateDockWidgetPluginGui("BrushToolWidgetV1", widgetInfo)
 	UI.widget.Title = "Brush Tool"
 
 	UI.buildInterface()
@@ -504,6 +504,7 @@ function UI.buildInterface()
 	local TabAssets = createTab("Assets", "Assets", tabBar, tabContent)
 	local TabPresets = createTab("Presets", "Presets", tabBar, tabContent)
 	local TabTuning = createTab("Tuning", "Tuning", tabBar, tabContent)
+	local TabHelp = createTab("Help", "Help", tabBar, tabContent)
 
 	-- TOOLS TAB
 	createSectionHeader("Output Settings", TabTools.frame)
@@ -558,7 +559,7 @@ function UI.buildInterface()
 	mgLayout.Parent = modeGrid
 
 	UI.C.modeButtons = {}
-	local modeNames = {"Paint", "Line", "Path", "Fill", "Replace", "Stamp", "Volume", "Erase"}
+	local modeNames = {"Paint", "Line", "Path", "Fill", "Volume", "Stamp", "Replace", "Erase"}
 	for _, m in ipairs(modeNames) do
 		local b, s = createStyledButton(m, modeGrid)
 		b.TextSize = 13
@@ -1281,6 +1282,86 @@ function UI.buildInterface()
 		UI.C.wobbleXMaxBox[1].Text = tostring(xMax)
 		UI.C.wobbleZMaxBox[1].Text = tostring(zMax)
 	end)
+
+	-- HELP TAB
+	local helpFrame = TabHelp.frame
+
+	createSectionHeader("About Brush Tool V1", helpFrame)
+	local aboutText = Instance.new("TextLabel")
+	aboutText.Size = UDim2.new(1, 0, 0, 0)
+	aboutText.AutomaticSize = Enum.AutomaticSize.Y
+	aboutText.BackgroundTransparency = 1
+	aboutText.Text = "Brush Tool V1 is a professional asset placement system designed for speed and precision. Place models, decals, and textures with advanced randomizers, smart surface snapping, and masking tools.\n\nVersion: 1.0.0 (Release)"
+	aboutText.Font = Theme.FontMain
+	aboutText.TextSize = 13
+	aboutText.TextColor3 = Theme.TextDim
+	aboutText.TextXAlignment = Enum.TextXAlignment.Left
+	aboutText.TextWrapped = true
+	aboutText.Parent = helpFrame
+
+	createSectionHeader("Modes Guide", helpFrame)
+
+	local function addHelpItem(title, desc)
+		local container = Instance.new("Frame")
+		container.Size = UDim2.new(1, 0, 0, 0)
+		container.AutomaticSize = Enum.AutomaticSize.Y
+		container.BackgroundTransparency = 1
+		container.Parent = helpFrame
+
+		local t = Instance.new("TextLabel")
+		t.Size = UDim2.new(1, 0, 0, 20)
+		t.BackgroundTransparency = 1
+		t.Text = "• " .. title
+		t.Font = Theme.FontHeader
+		t.TextSize = 13
+		t.TextColor3 = Theme.Text
+		t.TextXAlignment = Enum.TextXAlignment.Left
+		t.Parent = container
+
+		local d = Instance.new("TextLabel")
+		d.Size = UDim2.new(1, -10, 0, 0)
+		d.Position = UDim2.new(0, 10, 0, 20)
+		d.AutomaticSize = Enum.AutomaticSize.Y
+		d.BackgroundTransparency = 1
+		d.Text = desc
+		d.Font = Theme.FontMain
+		d.TextSize = 12
+		d.TextColor3 = Theme.TextDim
+		d.TextXAlignment = Enum.TextXAlignment.Left
+		d.TextWrapped = true
+		d.Parent = container
+
+		local pad = Instance.new("UIPadding")
+		pad.PaddingBottom = UDim.new(0, 8)
+		pad.Parent = container
+	end
+
+	addHelpItem("Paint", "Click and drag to scatter assets within the radius. Adjust Density for more assets per stroke.")
+	addHelpItem("Line", "Click start point, then click end point to place a row of assets. Uses 'Spacing' parameter.")
+	addHelpItem("Path", "Click multiple points to draw a curve. Press 'Generate' to place assets along it. Use Undo/Redo to fix points.")
+	addHelpItem("Volume", "Fills a spherical area in 3D space. Useful for floating debris or clouds.")
+	addHelpItem("Fill", "Select a Part, then click 'Fill' to populate its volume with assets.")
+	addHelpItem("Stamp", "Places a single asset at a time with precision.")
+	addHelpItem("Erase / Replace", "Remove or Swap assets within the brush radius. Use 'Filter' to target specific groups.")
+
+	createSectionHeader("Tuning Guide", helpFrame)
+	addHelpItem("Transformation Randomizer", "Randomize Scale, Rotation, Color, and Transparency. Use 'Wobble' to add tilt variation.")
+	addHelpItem("Environment", "Control Ghost opacity/limits. 'Smart Surface Snap' aligns objects to terrain geometry.")
+	addHelpItem("Surface Lock", "Force asset alignment to Floors, Walls, or Ceilings.")
+	addHelpItem("Filters", "Limit placement to specific Materials, Slope angles, or Height (Y-Level) ranges.")
+
+	createSectionHeader("Pro Tips", helpFrame)
+	local tipsText = Instance.new("TextLabel")
+	tipsText.Size = UDim2.new(1, 0, 0, 0)
+	tipsText.AutomaticSize = Enum.AutomaticSize.Y
+	tipsText.BackgroundTransparency = 1
+	tipsText.Text = "1. Use 'Smart Surface Snap' in Tuning tab to align complex models to irregular terrain.\n2. 'Slope Mask' prevents placement on steep cliffs.\n3. Save your favorite setups in the 'Presets' tab.\n4. Organize outputs using 'Grouped' mode in Output Settings."
+	tipsText.Font = Theme.FontMain
+	tipsText.TextSize = 13
+	tipsText.TextColor3 = Theme.TextDim
+	tipsText.TextXAlignment = Enum.TextXAlignment.Left
+	tipsText.TextWrapped = true
+	tipsText.Parent = helpFrame
 
 	switchTab("Tools")
 end
