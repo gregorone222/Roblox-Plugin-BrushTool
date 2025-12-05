@@ -26,7 +26,6 @@ State.selectedAssetInUI = nil
 State.surfaceAngleMode = "Off"
 State.snapToGridEnabled = false
 State.gridSize = 4
-State.smartSnapEnabled = false
 State.currentAssetGroup = "Default"
 State.isGroupListView = false
 State.ghostTransparency = 0.65
@@ -60,7 +59,7 @@ State.SmartEraser = {
 -- Output Organization State
 State.Output = {
 	Mode = "PerStroke", -- "PerStroke", "Fixed", "Grouped"
-	FixedFolderName = "BrushOutput"
+	FixedFolderName = "AssetFlux_Output"
 }
 
 -- Preview Objects (Will be set by Core)
@@ -117,11 +116,11 @@ function State.init(pPlugin, pConstants)
 	end
 
 	-- Global Preview Folders
-	State.previewFolder = workspace:FindFirstChild("_BrushPreview") or Instance.new("Folder", workspace)
-	State.previewFolder.Name = "_BrushPreview"
+	State.previewFolder = workspace:FindFirstChild("_AssetFluxPreview") or Instance.new("Folder", workspace)
+	State.previewFolder.Name = "_AssetFluxPreview"
 
-	State.pathPreviewFolder = workspace:FindFirstChild("_PathPreview") or Instance.new("Folder", workspace)
-	State.pathPreviewFolder.Name = "_PathPreview"
+	State.pathPreviewFolder = workspace:FindFirstChild("_AssetFluxPathPreview") or Instance.new("Folder", workspace)
+	State.pathPreviewFolder.Name = "_AssetFluxPathPreview"
 
 	State.currentMode = "Paint" -- Ensure default mode is Paint explicitly on init
 
