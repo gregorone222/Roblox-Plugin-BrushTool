@@ -1,9 +1,9 @@
 local Constants = {}
 
-Constants.ASSET_FOLDER_NAME = "BrushToolAssets"
-Constants.WORKSPACE_FOLDER_NAME = "BrushToolCreations"
-Constants.SETTINGS_KEY = "BrushToolAssetOffsets_v5"
-Constants.PRESETS_KEY = "BrushToolPresets_v1"
+Constants.ASSET_FOLDER_NAME = "AssetFlux_Assets"
+Constants.WORKSPACE_FOLDER_NAME = "AssetFlux_Output"
+Constants.SETTINGS_KEY = "AssetFlux_Settings_v1"
+Constants.PRESETS_KEY = "AssetFlux_Presets_v1"
 
 -- Modern Minimalist Theme (Sleek & Soft)
 Constants.Theme = {
