@@ -193,52 +193,264 @@ local function createCheckbox(text, parent)
 	return clickArea, proxyInner, label, container
 end
 
-local function createStyledInput(labelText, defaultValue, parent)
+-- Default limits map for known parameters
+local SLIDER_LIMITS = {
+	-- Tools
+	["Radius (Studs)"] = {min=0.1, max=50, step=0.1},
+	["Density (Count)"] = {min=1, max=100, step=1},
+	["Spacing (Studs)"] = {min=0.1, max=20, step=0.1},
+	["Distance (Studs)"] = {min=1, max=100, step=1},
+
+	-- Asset Settings
+	["Y-Offset"] = {min=-10, max=10, step=0.1},
+	["Probability"] = {min=0, max=10, step=0.1},
+	["Base Scale"] = {min=0.1, max=5, step=0.1},
+	["Base Rot (Y)"] = {min=0, max=360, step=1},
+	["Base Rot (X)"] = {min=0, max=360, step=1},
+
+	-- Tuning Environment
+	["Grid Size"] = {min=0.1, max=16, step=0.1},
+	["Ghost Trans"] = {min=0, max=1, step=0.05},
+	["Ghost Limit"] = {min=1, max=50, step=1},
+
+	-- Randomizers
+	["Scale Min"] = {min=0.1, max=3, step=0.1},
+	["Scale Max"] = {min=0.1, max=5, step=0.1},
+	["Rot X Min"] = {min=-180, max=180, step=1},
+	["Rot X Max"] = {min=-180, max=180, step=1},
+	["Rot Z Min"] = {min=-180, max=180, step=1},
+	["Rot Z Max"] = {min=-180, max=180, step=1},
+
+	-- Color
+	["Hue Min"] = {min=0, max=1, step=0.01}, -- Usually relative shift, so small range might be better, but generic 0-1 ok
+	["Hue Max"] = {min=0, max=1, step=0.01},
+	["Sat Min"] = {min=-1, max=1, step=0.05},
+	["Sat Max"] = {min=-1, max=1, step=0.05},
+	["Val Min"] = {min=-1, max=1, step=0.05},
+	["Val Max"] = {min=-1, max=1, step=0.05},
+
+	-- Trans
+	["Trns Min"] = {min=-1, max=1, step=0.05},
+	["Trns Max"] = {min=-1, max=1, step=0.05},
+
+	-- Wobble
+	["X Angle (Deg)"] = {min=0, max=90, step=1},
+	["Z Angle (Deg)"] = {min=0, max=90, step=1},
+	["Min Angle"] = {min=0, max=90, step=1},
+	["Max Angle"] = {min=0, max=90, step=1},
+	["Min Y"] = {min=-1000, max=1000, step=10},
+	["Max Y"] = {min=-1000, max=1000, step=10},
+}
+
+local function createSliderWithInput(labelText, defaultValue, parent)
 	local container = Instance.new("Frame")
 	container.BackgroundTransparency = 1
-	container.Size = UDim2.new(1, 0, 0, 44)
+	container.Size = UDim2.new(1, 0, 0, 52) -- Increased height for slider
 	container.Parent = parent
 
+	-- Top Row: Label + Input
+	local topRow = Instance.new("Frame")
+	topRow.Size = UDim2.new(1, 0, 0, 26)
+	topRow.BackgroundTransparency = 1
+	topRow.Parent = container
+
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, 0, 0, 16)
+	label.Size = UDim2.new(1, -60, 1, 0)
 	label.BackgroundTransparency = 1
 	label.Text = labelText
 	label.Font = Theme.FontMain
 	label.TextSize = 12
 	label.TextColor3 = Theme.TextDim
 	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Parent = container
+	label.Parent = topRow
 
 	local inputBox = Instance.new("TextBox")
-	inputBox.Size = UDim2.new(1, 0, 0, 26)
-	inputBox.Position = UDim2.new(0, 0, 0, 18)
+	inputBox.Size = UDim2.new(0, 50, 1, 0)
+	inputBox.Position = UDim2.new(1, -50, 0, 0)
 	inputBox.BackgroundColor3 = Theme.Panel
 	inputBox.Text = tostring(defaultValue)
 	inputBox.TextColor3 = Theme.Text
 	inputBox.Font = Theme.FontMain
-	inputBox.TextSize = 14
-	inputBox.TextXAlignment = Enum.TextXAlignment.Left
+	inputBox.TextSize = 12
+	inputBox.TextXAlignment = Enum.TextXAlignment.Center
 	inputBox.BorderSizePixel = 0
 	inputBox.ClearTextOnFocus = false
-	inputBox.Parent = container
+	inputBox.Parent = topRow
+	addCorner(inputBox, 4)
 
-	addCorner(inputBox, 6)
+	inputBox.Focused:Connect(function() inputBox.BackgroundColor3 = Theme.PanelHover; inputBox.TextColor3 = Theme.Accent end)
+	inputBox.FocusLost:Connect(function() inputBox.BackgroundColor3 = Theme.Panel; inputBox.TextColor3 = Theme.Text end)
 
-	local padding = Instance.new("UIPadding")
-	padding.PaddingLeft = UDim.new(0, 10)
-	padding.Parent = inputBox
+	-- Slider Row
+	local sliderBg = Instance.new("Frame")
+	sliderBg.Size = UDim2.new(1, 0, 0, 4)
+	sliderBg.Position = UDim2.new(0, 0, 0, 38) -- Below top row with padding
+	sliderBg.BackgroundColor3 = Theme.Panel
+	sliderBg.BorderSizePixel = 0
+	sliderBg.Parent = container
+	addCorner(sliderBg, 2)
 
-	-- Highlight on focus
-	inputBox.Focused:Connect(function() 
-		inputBox.BackgroundColor3 = Theme.PanelHover 
-		inputBox.TextColor3 = Theme.Accent
+	local sliderFill = Instance.new("Frame")
+	sliderFill.Size = UDim2.new(0.5, 0, 1, 0) -- Default 50%
+	sliderFill.BackgroundColor3 = Theme.Accent
+	sliderFill.BorderSizePixel = 0
+	sliderFill.Parent = sliderBg
+	addCorner(sliderFill, 2)
+
+	local knob = Instance.new("TextButton") -- Button for interaction
+	knob.Size = UDim2.new(0, 12, 0, 12)
+	knob.Position = UDim2.new(0.5, -6, 0.5, -6)
+	knob.BackgroundColor3 = Theme.Text
+	knob.Text = ""
+	knob.AutoButtonColor = false
+	knob.Parent = sliderBg
+	addCorner(knob, 6)
+
+	-- Logic
+	local limits = SLIDER_LIMITS[labelText] or {min=0, max=100, step=1}
+
+	local function updateVisualsFromValue(val)
+		local pct = math.clamp((val - limits.min) / (limits.max - limits.min), 0, 1)
+		sliderFill.Size = UDim2.new(pct, 0, 1, 0)
+		knob.Position = UDim2.new(pct, -6, 0.5, -6)
+	end
+
+	local function setValue(val)
+		val = math.clamp(val, limits.min, limits.max)
+		-- Snap to step
+		if limits.step then
+			val = math.floor(val / limits.step + 0.5) * limits.step
+		end
+		-- Format
+		local fmt = (limits.step and limits.step < 1) and "%.2f" or "%d"
+		inputBox.Text = string.format(fmt, val)
+		updateVisualsFromValue(val)
+	end
+
+	-- Init
+	setValue(tonumber(defaultValue) or limits.min)
+
+	-- Input Listener
+	inputBox.FocusLost:Connect(function()
+		local n = tonumber(inputBox.Text)
+		if n then setValue(n) else setValue(limits.min) end
 	end)
-	inputBox.FocusLost:Connect(function() 
-		inputBox.BackgroundColor3 = Theme.Panel 
-		inputBox.TextColor3 = Theme.Text
+
+	-- Drag Listener
+	local dragging = false
+	knob.MouseButton1Down:Connect(function() dragging = true end)
+	local inputService = game:GetService("UserInputService")
+
+	-- We need a global release listener or equivalent. Since this is a plugin widget,
+	-- relying on InputEnded on the widget or runservice heartbeat is best.
+
+	-- Using InputChanged on knob is tricky if mouse moves fast.
+	-- Better to put a transparent button over the slider area or check mouse location on heartbeat while dragging.
+
+	-- Simple solution for plugin widgets:
+	local dragCon
+	local upCon
+
+	knob.MouseButton1Down:Connect(function()
+		dragging = true
+		knob.BackgroundColor3 = Theme.AccentHover
+	end)
+
+	inputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = false
+			knob.BackgroundColor3 = Theme.Text
+		end
+	end)
+
+	game:GetService("RunService").Heartbeat:Connect(function()
+		if dragging and container.Parent then -- check if valid
+			-- Standard Roblox UI Dragging logic:
+			local mPos = game:GetService("UserInputService"):GetMouseLocation()
+			-- This is screen space. Widget AbsolutePosition is also screen space.
+
+			local relativeX = mPos.X - sliderBg.AbsolutePosition.X
+			local pct = math.clamp(relativeX / sliderBg.AbsoluteSize.X, 0, 1)
+			local newVal = limits.min + (pct * (limits.max - limits.min))
+			setValue(newVal)
+		end
+	end)
+
+	-- Also allow clicking on bar to jump
+	local bgBtn = Instance.new("TextButton")
+	bgBtn.Size = UDim2.new(1,0,2,0)
+	bgBtn.Position = UDim2.new(0,0,-0.5,0)
+	bgBtn.BackgroundTransparency = 1
+	bgBtn.Text = ""
+	bgBtn.ZIndex = 0
+	bgBtn.Parent = sliderBg
+
+	bgBtn.MouseButton1Down:Connect(function()
+		dragging = true
+		knob.BackgroundColor3 = Theme.AccentHover
+		-- Immediate update
+		local mPos = game:GetService("UserInputService"):GetMouseLocation()
+		local relativeX = mPos.X - sliderBg.AbsolutePosition.X
+		local pct = math.clamp(relativeX / sliderBg.AbsoluteSize.X, 0, 1)
+		local newVal = limits.min + (pct * (limits.max - limits.min))
+		setValue(newVal)
 	end)
 
 	return inputBox, container
+end
+
+-- Renamed original to keep if needed, but we replace usage
+local function createStyledInput(labelText, defaultValue, parent)
+    -- Check if we have limits for this label, if so use slider
+    if SLIDER_LIMITS[labelText] then
+        return createSliderWithInput(labelText, defaultValue, parent)
+    else
+        -- Fallback to old style
+        local container = Instance.new("Frame")
+        container.BackgroundTransparency = 1
+        container.Size = UDim2.new(1, 0, 0, 44)
+        container.Parent = parent
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 0, 16)
+        label.BackgroundTransparency = 1
+        label.Text = labelText
+        label.Font = Theme.FontMain
+        label.TextSize = 12
+        label.TextColor3 = Theme.TextDim
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Parent = container
+
+        local inputBox = Instance.new("TextBox")
+        inputBox.Size = UDim2.new(1, 0, 0, 26)
+        inputBox.Position = UDim2.new(0, 0, 0, 18)
+        inputBox.BackgroundColor3 = Theme.Panel
+        inputBox.Text = tostring(defaultValue)
+        inputBox.TextColor3 = Theme.Text
+        inputBox.Font = Theme.FontMain
+        inputBox.TextSize = 14
+        inputBox.TextXAlignment = Enum.TextXAlignment.Left
+        inputBox.BorderSizePixel = 0
+        inputBox.ClearTextOnFocus = false
+        inputBox.Parent = container
+
+        addCorner(inputBox, 6)
+
+        local padding = Instance.new("UIPadding")
+        padding.PaddingLeft = UDim.new(0, 10)
+        padding.Parent = inputBox
+
+        inputBox.Focused:Connect(function()
+            inputBox.BackgroundColor3 = Theme.PanelHover
+            inputBox.TextColor3 = Theme.Accent
+        end)
+        inputBox.FocusLost:Connect(function()
+            inputBox.BackgroundColor3 = Theme.Panel
+            inputBox.TextColor3 = Theme.Text
+        end)
+
+        return inputBox, container
+    end
 end
 
 local function createSectionHeader(text, parent)
@@ -415,8 +627,8 @@ local function createOrderedRandomizerGroup(parent, toggleText, layoutOrder)
 	grid.Parent = container
 
 	local gridLayout = Instance.new("UIGridLayout")
-	gridLayout.CellSize = UDim2.new(0.48, 0, 0, 44)
-	gridLayout.CellPadding = UDim2.new(0.04, 0, 0, 8)
+	gridLayout.CellSize = UDim2.new(0.48, 0, 0, 52) -- Adjusted for Slider
+	gridLayout.CellPadding = UDim2.new(0.04, 0, 0, 16) -- Adjusted padding
 	gridLayout.Parent = grid
 
 	local randomizeBtn = {createStyledButton("Randomize", container)}
@@ -435,8 +647,8 @@ function UI.init(plugin, pState, pConstants, pUtils)
 		Enum.InitialDockState.Float,
 		false, false, 300, 500, 250, 300
 	)
-	UI.widget = plugin:CreateDockWidgetPluginGui("BrushToolWidgetV1", widgetInfo)
-	UI.widget.Title = "Brush Tool"
+	UI.widget = plugin:CreateDockWidgetPluginGui("AssetFluxWidgetV1", widgetInfo)
+	UI.widget.Title = "AssetFlux"
 
 	UI.buildInterface()
 	UI.updateAllToggles()
@@ -473,7 +685,7 @@ function UI.buildInterface()
 	UI.C.activationBtn.Size = UDim2.new(1, -32, 0, 32)
 	UI.C.activationBtn.Position = UDim2.new(0, 16, 0.5, -16)
 	UI.C.activationBtn.BackgroundColor3 = Theme.Panel
-	UI.C.activationBtn.Text = "Activate Brush"
+	UI.C.activationBtn.Text = "Activate AssetFlux"
 	UI.C.activationBtn.Font = Theme.FontHeader
 	UI.C.activationBtn.TextSize = 14
 	UI.C.activationBtn.TextColor3 = Theme.Text
@@ -518,7 +730,7 @@ function UI.buildInterface()
 	ol.Parent = outputFrame
 
 	UI.C.outputModeBtn = {createStyledButton("Mode: Per Stroke", outputFrame)}
-	UI.C.outputFolderNameInput = {createStyledInput("Folder Name", "BrushOutput", outputFrame)}
+	UI.C.outputFolderNameInput = {createStyledInput("Folder Name", "AssetFlux_Output", outputFrame)}
 
 	-- Initial State
 	UI.C.outputFolderNameInput[2].Visible = false
@@ -541,7 +753,7 @@ function UI.buildInterface()
 
 	UI.C.outputFolderNameInput[1].FocusLost:Connect(function()
 		local txt = Utils.trim(UI.C.outputFolderNameInput[1].Text)
-		if txt == "" then txt = "BrushOutput" end
+		if txt == "" then txt = "AssetFlux_Output" end
 		State.Output.FixedFolderName = txt
 		UI.C.outputFolderNameInput[1].Text = txt
 	end)
@@ -573,7 +785,7 @@ function UI.buildInterface()
 	brushParamsContainer.BackgroundTransparency = 1
 	brushParamsContainer.Parent = TabTools.frame
 	local bpLayout = Instance.new("UIGridLayout")
-	bpLayout.CellSize = UDim2.new(0.48, 0, 0, 44)
+	bpLayout.CellSize = UDim2.new(0.48, 0, 0, 52) -- Slider height
 	bpLayout.CellPadding = UDim2.new(0.04, 0, 0, 8)
 	bpLayout.Parent = brushParamsContainer
 
@@ -787,7 +999,7 @@ function UI.buildInterface()
 	asGrid.BackgroundTransparency = 1
 	asGrid.Parent = UI.C.assetSettingsFrame
 	local asgl = Instance.new("UIGridLayout")
-	asgl.CellSize = UDim2.new(0.48, 0, 0, 40)
+	asgl.CellSize = UDim2.new(0.48, 0, 0, 52) -- Slider height
 	asgl.CellPadding = UDim2.new(0.04, 0, 0, 8)
 	asgl.Parent = asGrid
 	UI.C.assetSettingsOffsetY = {createStyledInput("Y-Offset", "0", asGrid)}
@@ -796,7 +1008,25 @@ function UI.buildInterface()
 	UI.C.assetSettingsBaseRotation = {createStyledInput("Base Rot (Y)", "0", asGrid)}
 	UI.C.assetSettingsBaseRotationX = {createStyledInput("Base Rot (X)", "0", asGrid)}
 
+	UI.C.assetSettingsPlacementMode = {createStyledButton("Mode: Bounding Box", UI.C.assetSettingsFrame)}
+	UI.C.assetSettingsPlacementMode[1].Size = UDim2.new(1, 0, 0, 32)
+
 	UI.C.assetSettingsActive = {createCheckbox("Active in Brush", UI.C.assetSettingsFrame)}
+
+	UI.C.assetSettingsPlacementMode[1].MouseButton1Click:Connect(function()
+		if State.selectedAssetInUI then
+			local key = State.selectedAssetInUI .. "_placementMode"
+			local current = State.assetOffsets[key] or "BoundingBox"
+			local nextMode = "BoundingBox"
+			if current == "BoundingBox" then nextMode = "PrimaryPart"
+			elseif current == "PrimaryPart" then nextMode = "Raycast"
+			else nextMode = "BoundingBox" end
+
+			State.assetOffsets[key] = nextMode
+			State.persistOffsets()
+			UI.C.assetSettingsPlacementMode[1].Text = "Mode: " .. nextMode
+		end
+	end)
 
 	UI.C.assetSettingsActive[1].MouseButton1Click:Connect(function()
 		if State.selectedAssetInUI then
@@ -922,9 +1152,6 @@ function UI.buildInterface()
 	local envWrapper, envContent = createCollapsibleSection("Environment Control", TabTuning.frame, false, tuningLayoutOrder)
 	tuningLayoutOrder = tuningLayoutOrder + 1
 	local envOrder = 1
-
-	UI.C.smartSnapBtn = {createCheckbox("Smart Surface Snap", envContent)}
-	UI.C.smartSnapBtn[4].LayoutOrder = envOrder; envOrder = envOrder + 1
 
 	UI.C.snapToGridBtn = {createCheckbox("Snap to Grid", envContent)}
 	UI.C.snapToGridBtn[4].LayoutOrder = envOrder; envOrder = envOrder + 1
@@ -1127,7 +1354,7 @@ function UI.buildInterface()
 	UI.C.slopeGrid.Parent = slopeContent
 
 	local slopeLayout = Instance.new("UIGridLayout")
-	slopeLayout.CellSize = UDim2.new(0.48, 0, 0, 40)
+	slopeLayout.CellSize = UDim2.new(0.48, 0, 0, 52) -- Slider height
 	slopeLayout.CellPadding = UDim2.new(0.04, 0, 0, 0)
 	slopeLayout.Parent = UI.C.slopeGrid
 
@@ -1162,7 +1389,7 @@ function UI.buildInterface()
 	UI.C.heightGrid.Parent = heightContent
 
 	local heightLayout = Instance.new("UIGridLayout")
-	heightLayout.CellSize = UDim2.new(0.48, 0, 0, 40)
+	heightLayout.CellSize = UDim2.new(0.48, 0, 0, 52) -- Slider height
 	heightLayout.CellPadding = UDim2.new(0.04, 0, 0, 0)
 	heightLayout.Parent = UI.C.heightGrid
 
@@ -1179,11 +1406,6 @@ function UI.buildInterface()
 
 	-- Connect Tuning Toggles & Inputs (Moved to end to ensure elements exist)
 	-- Environment
-	UI.C.smartSnapBtn[1].MouseButton1Click:Connect(function()
-		State.smartSnapEnabled = not State.smartSnapEnabled
-		UI.updateAllToggles()
-	end)
-
 	UI.C.snapToGridBtn[1].MouseButton1Click:Connect(function()
 		State.snapToGridEnabled = not State.snapToGridEnabled
 		UI.updateAllToggles()
@@ -1286,12 +1508,12 @@ function UI.buildInterface()
 	-- HELP TAB
 	local helpFrame = TabHelp.frame
 
-	createSectionHeader("About Brush Tool V1", helpFrame)
+	createSectionHeader("About AssetFlux", helpFrame)
 	local aboutText = Instance.new("TextLabel")
 	aboutText.Size = UDim2.new(1, 0, 0, 0)
 	aboutText.AutomaticSize = Enum.AutomaticSize.Y
 	aboutText.BackgroundTransparency = 1
-	aboutText.Text = "Brush Tool V1 is a professional asset placement system designed for speed and precision. Place models, decals, and textures with advanced randomizers, smart surface snapping, and masking tools.\n\nVersion: 1.0.0 (Release)"
+	aboutText.Text = "AssetFlux is a professional asset placement system designed for fluid creativity. Place models, decals, and textures with advanced randomizers, smart surface snapping, and masking tools.\n\nVersion: 1.0.0 (Release)"
 	aboutText.Font = Theme.FontMain
 	aboutText.TextSize = 13
 	aboutText.TextColor3 = Theme.TextDim
@@ -1346,7 +1568,7 @@ function UI.buildInterface()
 
 	createSectionHeader("Tuning Guide", helpFrame)
 	addHelpItem("Transformation Randomizer", "Randomize Scale, Rotation, Color, and Transparency. Use 'Wobble' to add tilt variation.")
-	addHelpItem("Environment", "Control Ghost opacity/limits. 'Smart Surface Snap' aligns objects to terrain geometry.")
+	addHelpItem("Environment", "Control Ghost opacity/limits.")
 	addHelpItem("Surface Lock", "Force asset alignment to Floors, Walls, or Ceilings.")
 	addHelpItem("Filters", "Limit placement to specific Materials, Slope angles, or Height (Y-Level) ranges.")
 
@@ -1355,7 +1577,7 @@ function UI.buildInterface()
 	tipsText.Size = UDim2.new(1, 0, 0, 0)
 	tipsText.AutomaticSize = Enum.AutomaticSize.Y
 	tipsText.BackgroundTransparency = 1
-	tipsText.Text = "1. Use 'Smart Surface Snap' in Tuning tab to align complex models to irregular terrain.\n2. 'Slope Mask' prevents placement on steep cliffs.\n3. Save your favorite setups in the 'Presets' tab.\n4. Organize outputs using 'Grouped' mode in Output Settings."
+	tipsText.Text = "1. 'Slope Mask' prevents placement on steep cliffs.\n2. Save your favorite setups in the 'Presets' tab.\n3. Organize outputs using 'Grouped' mode in Output Settings."
 	tipsText.Font = Theme.FontMain
 	tipsText.TextSize = 13
 	tipsText.TextColor3 = Theme.TextDim
@@ -1407,7 +1629,7 @@ function UI.updateOnOffButtonUI()
 		UI.C.activationBtn.TextColor3 = Theme.Background
 		UI.C.activationBtn.BackgroundColor3 = Theme.Success
 	else
-		UI.C.activationBtn.Text = "Activate Brush"
+		UI.C.activationBtn.Text = "Activate AssetFlux"
 		UI.C.activationBtn.TextColor3 = Theme.Text
 		UI.C.activationBtn.BackgroundColor3 = Theme.Panel
 	end
@@ -1426,7 +1648,6 @@ function UI.updateAllToggles()
 	updateToggle(UI.C.assetSettingsAlign[1], UI.C.assetSettingsAlign[2], UI.C.assetSettingsAlign[3], State.alignToSurface)
 	updateToggle(UI.C.assetSettingsActive[1], UI.C.assetSettingsActive[2], UI.C.assetSettingsActive[3], activeState)
 
-	updateToggle(UI.C.smartSnapBtn[1], UI.C.smartSnapBtn[2], UI.C.smartSnapBtn[3], State.smartSnapEnabled)
 	updateToggle(UI.C.snapToGridBtn[1], UI.C.snapToGridBtn[2], UI.C.snapToGridBtn[3], State.snapToGridEnabled)
 
 	updateToggle(UI.C.materialFilterToggle[1], UI.C.materialFilterToggle[2], UI.C.materialFilterToggle[3], State.MaterialFilter.Enabled)
@@ -1701,11 +1922,16 @@ function UI.updateAssetUIList()
 			UI.C.assetSettingsBaseRotation[1].Text = tostring(State.assetOffsets[asset.Name.."_rotation"] or 0)
 			UI.C.assetSettingsBaseRotationX[1].Text = tostring(State.assetOffsets[asset.Name.."_rotationX"] or 0)
 
+			local pMode = State.assetOffsets[asset.Name .. "_placementMode"] or "BoundingBox"
+			UI.C.assetSettingsPlacementMode[1].Text = "Mode: " .. pMode
+
 			-- Toggle visibility based on asset type
 			local isSticker = asset:IsA("Decal") or asset:IsA("Texture")
 			UI.C.assetSettingsBaseScale[2].Visible = isSticker
 			UI.C.assetSettingsBaseRotation[2].Visible = isSticker
 			UI.C.assetSettingsBaseRotationX[2].Visible = isSticker
+			-- Hide Placement Mode for Stickers (always top face)
+			UI.C.assetSettingsPlacementMode[1].Visible = not isSticker
 
 			UI.updateAllToggles()
 			UI.updateAssetUIList() 

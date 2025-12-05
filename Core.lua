@@ -34,7 +34,7 @@ function Core.getOutputParent(assetName)
 
 	if State.Output.Mode == "Fixed" then
 		local folderName = Utils.trim(State.Output.FixedFolderName)
-		if folderName == "" then folderName = "BrushOutput" end
+		if folderName == "" then folderName = "AssetFlux_Output" end
 
 		local target = mainContainer:FindFirstChild(folderName)
 		if not target then
@@ -167,6 +167,7 @@ local function applyAssetTransform(asset, position, normal, scale, rotation, wob
 
 	local customOffset = State.assetOffsets[assetName] or 0
 	local finalScale = scale or 1.0
+	local placementMode = State.assetOffsets[assetName .. "_placementMode"] or "BoundingBox"
 
 	-- Pre-calc sticker base transforms (since they are constant per asset type)
 	if isSticker then
@@ -185,51 +186,15 @@ local function applyAssetTransform(asset, position, normal, scale, rotation, wob
 	if asset:IsA("Model") and asset.PrimaryPart then
 		if math.abs(finalScale - 1) > 0.0001 then Utils.scaleModel(asset, finalScale) end
 
-		local finalPosition = position + (effectiveNormal * customOffset)
+		-- Determine base position based on placement mode
+		local targetPos = position
 
-		if State.smartSnapEnabled then
-			local downDir = -effectiveNormal
-			if (not normal) or (State.surfaceAngleMode == "Off" and not shouldAlign) then downDir = Vector3.new(0, -1, 0) end
+		if State.snapToGridEnabled then targetPos = Utils.snapPositionToGrid(targetPos, State.gridSize) end
 
-			local tempCFrame = asset:GetPrimaryPartCFrame()
-			asset:SetPrimaryPartCFrame(CFrame.new(finalPosition) * rotation)
-
-			local maxDistAlongDown = -math.huge
-			for _, desc in ipairs(asset:GetDescendants()) do
-				if desc:IsA("BasePart") then
-					local s_part = desc.Size/2
-					local corners = {
-						Vector3.new(s_part.X, s_part.Y, s_part.Z), Vector3.new(s_part.X, s_part.Y, -s_part.Z),
-						Vector3.new(s_part.X, -s_part.Y, s_part.Z), Vector3.new(s_part.X, -s_part.Y, -s_part.Z),
-						Vector3.new(-s_part.X, s_part.Y, s_part.Z), Vector3.new(-s_part.X, s_part.Y, -s_part.Z),
-						Vector3.new(-s_part.X, -s_part.Y, s_part.Z), Vector3.new(-s_part.X, -s_part.Y, -s_part.Z)
-					}
-					for _, c in ipairs(corners) do
-						local worldC = desc.CFrame * c
-						local dist = (worldC - finalPosition):Dot(downDir)
-						if dist > maxDistAlongDown then maxDistAlongDown = dist end
-					end
-				end
-			end
-
-			if maxDistAlongDown > -math.huge then
-				local rayStart = finalPosition + (downDir * maxDistAlongDown) - (downDir * 1) 
-				local rayParams = RaycastParams.new()
-				rayParams.FilterDescendantsInstances = { State.previewFolder, getWorkspaceContainer(), State.pathPreviewFolder, asset }
-				rayParams.FilterType = Enum.RaycastFilterType.Exclude
-				local snapResult = workspace:Raycast(rayStart, downDir * 20, rayParams)
-				if snapResult then
-					local shift = (snapResult.Position - (finalPosition + downDir * maxDistAlongDown))
-					finalPosition = finalPosition + (downDir * (shift:Dot(downDir)))
-				end
-			end
-			asset:SetPrimaryPartCFrame(tempCFrame)
-		end
-
-		if State.snapToGridEnabled then finalPosition = Utils.snapPositionToGrid(finalPosition, State.gridSize) end
-
-		local finalCFrame
+		-- Calculate Orientation
+		local orientCFrame
 		local forceAlign = (State.surfaceAngleMode == "Wall")
+
 		if (forceAlign or (shouldAlign and State.surfaceAngleMode == "Off")) and normal then
 			local rotatedCFrame = CFrame.new() * rotation
 			local look = rotatedCFrame.LookVector
@@ -238,33 +203,86 @@ local function applyAssetTransform(asset, position, normal, scale, rotation, wob
 			if rightVec.Magnitude < 0.9 then
 				look = rotatedCFrame.RightVector; rightVec = look:Cross(effectiveNormal).Unit; lookActual = effectiveNormal:Cross(rightVec).Unit
 			end
-			finalCFrame = CFrame.fromMatrix(finalPosition, rightVec, effectiveNormal, -lookActual)
+			orientCFrame = CFrame.fromMatrix(Vector3.zero, rightVec, effectiveNormal, -lookActual)
 		else
-			finalCFrame = CFrame.new(finalPosition) * rotation
+			orientCFrame = rotation
 		end
 
-		if wobble then finalCFrame = finalCFrame * wobble end
+		if wobble then orientCFrame = orientCFrame * wobble end
+
+		-- Apply Placement Mode Logic
+		local finalCFrame
+
+		if placementMode == "PrimaryPart" then
+			-- Pivot is exactly at target + customOffset
+			finalCFrame = CFrame.new(targetPos + (effectiveNormal * customOffset)) * orientCFrame
+
+		elseif placementMode == "BoundingBox" then
+			-- Pivot moves up by half size to sit on surface
+			-- Logic: Center of BBox is at Target + Y_Extent/2
+			-- Problem: If rotation is complex, Y extent changes. But usually BBox mode assumes Upright or Aligned.
+			-- Standard behavior: Use Model Size Y / 2 along Normal.
+			local _, size = asset:GetBoundingBox()
+			local distUp = size.Y / 2
+			finalCFrame = CFrame.new(targetPos + (effectiveNormal * (distUp + customOffset))) * orientCFrame
+
+		else -- "Raycast" (Smart Bottom)
+			-- 1. Place at target temporarily
+			local tempCF = CFrame.new(targetPos) * orientCFrame
+			asset:SetPrimaryPartCFrame(tempCF)
+
+			-- 2. Find lowest point relative to Normal (Project points onto Normal)
+			-- However, user specifically asked "bagian terbawah menempel tanah".
+			-- This usually implies World Y if floor, or Surface Normal if wall.
+			-- Let's use negative effectiveNormal as "Down".
+
+			local minDot = -math.huge
+			local downDir = -effectiveNormal
+
+			-- Scan parts to find lowest extent
+			for _, desc in ipairs(asset:GetDescendants()) do
+				if desc:IsA("BasePart") then
+					local s = desc.Size/2
+					local corners = {
+						Vector3.new(s.X, s.Y, s.Z), Vector3.new(s.X, s.Y, -s.Z),
+						Vector3.new(s.X, -s.Y, s.Z), Vector3.new(s.X, -s.Y, -s.Z),
+						Vector3.new(-s.X, s.Y, s.Z), Vector3.new(-s.X, s.Y, -s.Z),
+						Vector3.new(-s.X, -s.Y, s.Z), Vector3.new(-s.X, -s.Y, -s.Z)
+					}
+					for _, c in ipairs(corners) do
+						local worldPos = desc.CFrame * c
+						local dist = (worldPos - targetPos):Dot(downDir)
+						-- dist is positive "below" targetPos, negative "above"
+						-- maximizing dist means finding most downstream point
+						if dist > minDot then minDot = dist end
+					end
+				end
+			end
+
+			-- If minDot is still huge, fallback
+			if minDot == -math.huge then minDot = 0 end
+
+			-- Shift Up: We want the lowest point (minDot) to be at 0 (touching surface)
+			-- Currently it is at 'minDot' distance DOWN from targetPos.
+			-- So we move asset UP by 'minDot'.
+			-- wait, dot product logic:
+			-- P_lowest - P_center = V
+			-- V dot Down = D (how far down)
+			-- We want to move UP by D.
+			-- NewPos = OldPos - (Down * D) = OldPos + (Normal * D)
+
+			-- However, we used Dot(downDir). So positive result means it IS down.
+			-- So we move opposite to downDir (which is Normal) by that amount.
+
+			finalCFrame = tempCF + (effectiveNormal * (minDot + customOffset))
+		end
+
 		asset:SetPrimaryPartCFrame(finalCFrame)
 
 	elseif asset:IsA("BasePart") then
 		asset.Size = asset.Size * finalScale
 		local finalYOffset = (asset.Size.Y / 2) + customOffset
 		local finalPos = position + (effectiveNormal * finalYOffset)
-
-		if State.smartSnapEnabled then
-			local downDir = -effectiveNormal
-			if (not normal) or (State.surfaceAngleMode == "Off" and not shouldAlign) then downDir = Vector3.new(0, -1, 0) end
-			local rayParams = RaycastParams.new()
-			rayParams.FilterDescendantsInstances = { State.previewFolder, getWorkspaceContainer(), State.pathPreviewFolder, asset }
-			rayParams.FilterType = Enum.RaycastFilterType.Exclude
-			local rayStart = finalPos + (downDir * (asset.Size.Y/2 - 1))
-			local snapResult = workspace:Raycast(rayStart, downDir * 20, rayParams)
-			if snapResult then
-				local currentBottom = finalPos + (downDir * (asset.Size.Y/2))
-				local shift = snapResult.Position - currentBottom
-				finalPos = finalPos + shift
-			end
-		end
 
 		if State.snapToGridEnabled then finalPos = Utils.snapPositionToGrid(finalPos, State.gridSize) end
 		local finalCFrame
@@ -792,12 +810,12 @@ function Core.updatePreview()
 end
 
 function Core.paintAt(center, surfaceNormal)
-	ChangeHistoryService:SetWaypoint("Brush - Before Paint")
+	ChangeHistoryService:SetWaypoint("AssetFlux - Before Paint")
 	local container = getWorkspaceContainer()
 	local transientFolder = nil
 	if State.Output.Mode == "PerStroke" then
 		transientFolder = Instance.new("Folder")
-		transientFolder.Name = "BrushGroup_" .. tostring(math.floor(os.time()))
+		transientFolder.Name = "FluxGroup_" .. tostring(math.floor(os.time()))
 		transientFolder.Parent = container
 	end
 
@@ -834,7 +852,7 @@ function Core.paintAt(center, surfaceNormal)
 	end
 
 	if transientFolder and #transientFolder:GetChildren() == 0 then transientFolder:Destroy() end
-	ChangeHistoryService:SetWaypoint("Brush - After Paint")
+	ChangeHistoryService:SetWaypoint("AssetFlux - After Paint")
 
 	-- Clear pending batch after use
 	State.pendingBatch = {}
@@ -846,13 +864,13 @@ function Core.stampAt(center, surfaceNormal)
 end
 
 function Core.paintAlongLine(startPos, endPos)
-	ChangeHistoryService:SetWaypoint("Brush - Before Line Paint")
+	ChangeHistoryService:SetWaypoint("AssetFlux - Before Line Paint")
 	local container = getWorkspaceContainer()
 
 	local transientFolder = nil
 	if State.Output.Mode == "PerStroke" then
 		transientFolder = Instance.new("Folder")
-		transientFolder.Name = "BrushLine_" .. tostring(math.floor(os.time()))
+		transientFolder.Name = "FluxLine_" .. tostring(math.floor(os.time()))
 		transientFolder.Parent = container
 	end
 
@@ -884,7 +902,7 @@ function Core.paintAlongLine(startPos, endPos)
 	end
 
 	if transientFolder and #transientFolder:GetChildren() == 0 then transientFolder:Destroy() end
-	ChangeHistoryService:SetWaypoint("Brush - After Line Paint")
+	ChangeHistoryService:SetWaypoint("AssetFlux - After Line Paint")
 
 	State.pendingBatch = {}
 	Core.updateBatchGhosts({})
@@ -894,10 +912,10 @@ function Core.fillSelectedPart()
 	if not State.partToFill then return end
 	local density = math.max(1, math.floor(Utils.parseNumber(UI.C.densityBox[1].Text, 10)))
 
-	ChangeHistoryService:SetWaypoint("Brush - Before Fill")
+	ChangeHistoryService:SetWaypoint("AssetFlux - Before Fill")
 	local container = getWorkspaceContainer()
 	local groupFolder = Instance.new("Folder")
-	groupFolder.Name = "BrushFill_" .. tostring(math.floor(os.time()))
+	groupFolder.Name = "FluxFill_" .. tostring(math.floor(os.time()))
 	groupFolder.Parent = container
 
 	local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
@@ -934,7 +952,7 @@ function Core.fillSelectedPart()
 	end
 
 	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
-	ChangeHistoryService:SetWaypoint("Brush - After Fill")
+	ChangeHistoryService:SetWaypoint("AssetFlux - After Fill")
 end
 
 function Core.eraseAt(center)
@@ -942,7 +960,7 @@ function Core.eraseAt(center)
 	local assets = getAssetsInRadius(center, radius)
 
 	if #assets > 0 then
-		ChangeHistoryService:SetWaypoint("Brush - Before Erase")
+		ChangeHistoryService:SetWaypoint("AssetFlux - Before Erase")
 		for _, asset in ipairs(assets) do
 			local shouldErase = true
 			if State.SmartEraser.FilterMode == "CurrentGroup" then
@@ -962,7 +980,7 @@ function Core.eraseAt(center)
 				asset:Destroy()
 			end
 		end
-		ChangeHistoryService:SetWaypoint("Brush - After Erase")
+		ChangeHistoryService:SetWaypoint("AssetFlux - After Erase")
 	end
 end
 
@@ -982,7 +1000,7 @@ function Core.replaceAt(center)
 	if #activeAssets == 0 then return end
 
 	if #assets > 0 then
-		ChangeHistoryService:SetWaypoint("Brush - Before Replace")
+		ChangeHistoryService:SetWaypoint("AssetFlux - Before Replace")
 		for _, asset in ipairs(assets) do
 			local shouldReplace = true
 			if State.SmartEraser.FilterMode == "CurrentGroup" then
@@ -1023,7 +1041,7 @@ function Core.replaceAt(center)
 				end
 			end
 		end
-		ChangeHistoryService:SetWaypoint("Brush - After Replace")
+		ChangeHistoryService:SetWaypoint("AssetFlux - After Replace")
 	end
 end
 
@@ -1061,10 +1079,10 @@ function Core.updateFillSelection()
 end
 
 function Core.paintInVolume(center)
-	ChangeHistoryService:SetWaypoint("Brush - Before Volume Paint")
+	ChangeHistoryService:SetWaypoint("AssetFlux - Before Volume Paint")
 	local container = getWorkspaceContainer()
 	local groupFolder = Instance.new("Folder")
-	groupFolder.Name = "BrushVolume_" .. tostring(math.floor(os.time()))
+	groupFolder.Name = "FluxVolume_" .. tostring(math.floor(os.time()))
 	groupFolder.Parent = container
 
 	local batchToPlace = {}
@@ -1087,7 +1105,7 @@ function Core.paintInVolume(center)
 	end
 
 	if #groupFolder:GetChildren() == 0 then groupFolder:Destroy() end
-	ChangeHistoryService:SetWaypoint("Brush - After Volume Paint")
+	ChangeHistoryService:SetWaypoint("AssetFlux - After Volume Paint")
 
 	State.pendingBatch = {}
 	Core.updateBatchGhosts({})
@@ -1180,13 +1198,13 @@ end
 function Core.generatePathAssets()
 	if #State.pathPoints < 2 then return end
 
-	ChangeHistoryService:SetWaypoint("Brush - Before Path Gen")
+	ChangeHistoryService:SetWaypoint("AssetFlux - Before Path Gen")
 	local container = getWorkspaceContainer()
 
 	local transientFolder = nil
 	if State.Output.Mode == "PerStroke" then
 		transientFolder = Instance.new("Folder")
-		transientFolder.Name = "BrushPath_" .. tostring(math.floor(os.time()))
+		transientFolder.Name = "FluxPath_" .. tostring(math.floor(os.time()))
 		transientFolder.Parent = container
 	end
 
@@ -1218,7 +1236,7 @@ function Core.generatePathAssets()
 	end
 
 	if transientFolder and #transientFolder:GetChildren() == 0 then transientFolder:Destroy() end
-	ChangeHistoryService:SetWaypoint("Brush - After Path Gen")
+	ChangeHistoryService:SetWaypoint("AssetFlux - After Path Gen")
 
 	-- Clear pending batch after use
 	State.pendingBatch = {}
@@ -1332,19 +1350,19 @@ function Core.activate()
 
 	-- Re-create preview folders if missing
 	if not State.previewFolder or not State.previewFolder.Parent then
-		State.previewFolder = workspace:FindFirstChild("_BrushPreview") or Instance.new("Folder", workspace)
-		State.previewFolder.Name = "_BrushPreview"
+		State.previewFolder = workspace:FindFirstChild("_AssetFluxPreview") or Instance.new("Folder", workspace)
+		State.previewFolder.Name = "_AssetFluxPreview"
 	end
 	if not State.pathPreviewFolder or not State.pathPreviewFolder.Parent then
-		State.pathPreviewFolder = workspace:FindFirstChild("_PathPreview") or Instance.new("Folder", workspace)
-		State.pathPreviewFolder.Name = "_PathPreview"
+		State.pathPreviewFolder = workspace:FindFirstChild("_AssetFluxPathPreview") or Instance.new("Folder", workspace)
+		State.pathPreviewFolder.Name = "_AssetFluxPathPreview"
 	end
 
 	State.previewPart = Instance.new("Part")
-	State.previewPart.Name = "BrushRadiusPreview"
+	State.previewPart.Name = "FluxRadiusPreview"
 	State.previewPart.Anchored = true; State.previewPart.CanCollide = false; State.previewPart.Transparency = 0.6; State.previewPart.Material = Enum.Material.Neon
 	State.linePreviewPart = Instance.new("Part")
-	State.linePreviewPart.Name = "BrushLinePreview"
+	State.linePreviewPart.Name = "FluxLinePreview"
 	State.linePreviewPart.Anchored = true; State.linePreviewPart.CanCollide = false; State.linePreviewPart.Transparency = 0.5; State.linePreviewPart.Material = Enum.Material.Neon
 
 	pluginInstance:Activate(true)

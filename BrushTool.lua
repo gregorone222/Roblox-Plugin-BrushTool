@@ -12,8 +12,8 @@ UI.init(plugin, State, Constants, Utils)
 Core.init(plugin, State, UI, Constants, Utils)
 
 -- Main Toolbar
-local toolbar = plugin:CreateToolbar("Brush Tool V1")
-local toolbarBtn = toolbar:CreateButton("Brush", "Open Brush Tool", "rbxassetid://1507949203")
+local toolbar = plugin:CreateToolbar("AssetFlux")
+local toolbarBtn = toolbar:CreateButton("AssetFlux", "Open AssetFlux Tool", "rbxassetid://1507949203")
 
 toolbarBtn.Click:Connect(function()
 	UI.widget.Enabled = not UI.widget.Enabled
@@ -126,7 +126,6 @@ UI.C.savePresetBtn[1].MouseButton1Click:Connect(function()
 			spacing = Utils.parseNumber(UI.C.spacingBox[1].Text, 1.5)
 		},
 		environment = {
-			smartSnap = State.smartSnapEnabled,
 			snapGrid = State.snapToGridEnabled,
 			gridSize = State.gridSize,
 			surfaceMode = State.surfaceAngleMode,
@@ -146,7 +145,6 @@ UI.C.savePresetBtn[1].MouseButton1Click:Connect(function()
 			UI.C.spacingBox[1].Text = tostring(savedState.brush.spacing)
 		end
 		if savedState.environment then
-			State.smartSnapEnabled = savedState.environment.smartSnap
 			State.snapToGridEnabled = savedState.environment.snapGrid
 			State.gridSize = savedState.environment.gridSize
 			UI.C.gridSizeBox[1].Text = tostring(State.gridSize)
@@ -170,7 +168,6 @@ UI.updatePresetUIList(function(savedState)
 		UI.C.spacingBox[1].Text = tostring(savedState.brush.spacing)
 	end
 	if savedState.environment then
-		State.smartSnapEnabled = savedState.environment.smartSnap
 		State.snapToGridEnabled = savedState.environment.snapGrid
 		State.gridSize = savedState.environment.gridSize
 		UI.C.gridSizeBox[1].Text = tostring(State.gridSize)
@@ -195,4 +192,4 @@ plugin.Unloading:Connect(function()
 	if State.ghostModel then State.ghostModel:Destroy() end
 end)
 
-print("Brush Tool V8 (Modular) // Loaded Successfully.")
+print("AssetFlux V1 // Loaded Successfully.")
