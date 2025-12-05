@@ -259,10 +259,15 @@ local function createSliderWithInput(labelText, defaultValue, parent)
 	label.BackgroundTransparency = 1
 	label.Text = labelText
 	label.Font = Theme.FontMain
-	label.TextSize = 12
 	label.TextColor3 = Theme.TextDim
 	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextScaled = true
 	label.Parent = topRow
+
+	local constraint = Instance.new("UITextSizeConstraint")
+	constraint.MaxTextSize = 12
+	constraint.MinTextSize = 8
+	constraint.Parent = label
 
 	local inputBox = Instance.new("TextBox")
 	inputBox.Size = UDim2.new(0, 50, 1, 0)
@@ -281,47 +286,61 @@ local function createSliderWithInput(labelText, defaultValue, parent)
 	inputBox.Focused:Connect(function() inputBox.BackgroundColor3 = Theme.PanelHover; inputBox.TextColor3 = Theme.Accent end)
 	inputBox.FocusLost:Connect(function() inputBox.BackgroundColor3 = Theme.Panel; inputBox.TextColor3 = Theme.Text end)
 
-	-- Slider Row
+	-- Logic
+	local limits = SLIDER_LIMITS[labelText] or {min=0, max=100, step=1}
+
+	-- Stepper Layout
+	-- [ - ] [=========|=========] [ + ]
+	local minusBtn = Instance.new("TextButton")
+	minusBtn.Size = UDim2.new(0, 24, 0, 24)
+	minusBtn.Position = UDim2.new(0, 0, 0, 28)
+	minusBtn.BackgroundColor3 = Theme.Panel
+	minusBtn.Text = "-"
+	minusBtn.TextColor3 = Theme.Text
+	minusBtn.Font = Theme.FontHeader
+	minusBtn.TextSize = 14
+	minusBtn.AutoButtonColor = false
+	minusBtn.Parent = container
+	addCorner(minusBtn, 6)
+
+	local plusBtn = Instance.new("TextButton")
+	plusBtn.Size = UDim2.new(0, 24, 0, 24)
+	plusBtn.Position = UDim2.new(1, -24, 0, 28)
+	plusBtn.BackgroundColor3 = Theme.Panel
+	plusBtn.Text = "+"
+	plusBtn.TextColor3 = Theme.Text
+	plusBtn.Font = Theme.FontHeader
+	plusBtn.TextSize = 14
+	plusBtn.AutoButtonColor = false
+	plusBtn.Parent = container
+	addCorner(plusBtn, 6)
+
 	local sliderBg = Instance.new("Frame")
-	sliderBg.Size = UDim2.new(1, 0, 0, 4)
-	sliderBg.Position = UDim2.new(0, 0, 0, 38) -- Below top row with padding
+	sliderBg.Size = UDim2.new(1, -56, 0, 4) -- Space for buttons
+	sliderBg.Position = UDim2.new(0, 28, 0, 38)
 	sliderBg.BackgroundColor3 = Theme.Panel
 	sliderBg.BorderSizePixel = 0
 	sliderBg.Parent = container
 	addCorner(sliderBg, 2)
 
 	local sliderFill = Instance.new("Frame")
-	sliderFill.Size = UDim2.new(0.5, 0, 1, 0) -- Default 50%
+	sliderFill.Size = UDim2.new(0.5, 0, 1, 0)
 	sliderFill.BackgroundColor3 = Theme.Accent
 	sliderFill.BorderSizePixel = 0
 	sliderFill.Parent = sliderBg
 	addCorner(sliderFill, 2)
 
-	local knob = Instance.new("TextButton") -- Button for interaction
-	knob.Size = UDim2.new(0, 12, 0, 12)
-	knob.Position = UDim2.new(0.5, -6, 0.5, -6)
-	knob.BackgroundColor3 = Theme.Text
-	knob.Text = ""
-	knob.AutoButtonColor = false
-	knob.Parent = sliderBg
-	addCorner(knob, 6)
-
-	-- Logic
-	local limits = SLIDER_LIMITS[labelText] or {min=0, max=100, step=1}
-
+	-- Visual Update Only (No Drag)
 	local function updateVisualsFromValue(val)
 		local pct = math.clamp((val - limits.min) / (limits.max - limits.min), 0, 1)
 		sliderFill.Size = UDim2.new(pct, 0, 1, 0)
-		knob.Position = UDim2.new(pct, -6, 0.5, -6)
 	end
 
 	local function setValue(val)
 		val = math.clamp(val, limits.min, limits.max)
-		-- Snap to step
 		if limits.step then
 			val = math.floor(val / limits.step + 0.5) * limits.step
 		end
-		-- Format
 		local fmt = (limits.step and limits.step < 1) and "%.2f" or "%d"
 		inputBox.Text = string.format(fmt, val)
 		updateVisualsFromValue(val)
@@ -336,65 +355,43 @@ local function createSliderWithInput(labelText, defaultValue, parent)
 		if n then setValue(n) else setValue(limits.min) end
 	end)
 
-	-- Drag Listener
-	local dragging = false
-	knob.MouseButton1Down:Connect(function() dragging = true end)
-	local inputService = game:GetService("UserInputService")
+	-- Stepper Logic
+	local function adjustValue(sign)
+		local current = tonumber(inputBox.Text) or limits.min
+		local step = limits.step or ((limits.max - limits.min) * 0.01)
+		if step == 0 then step = 1 end
+		setValue(current + (step * sign))
+	end
 
-	-- We need a global release listener or equivalent. Since this is a plugin widget,
-	-- relying on InputEnded on the widget or runservice heartbeat is best.
+	local function setupStepperButton(btn, sign)
+		local holding = false
 
-	-- Using InputChanged on knob is tricky if mouse moves fast.
-	-- Better to put a transparent button over the slider area or check mouse location on heartbeat while dragging.
+		btn.MouseButton1Down:Connect(function()
+			holding = true
+			btn.BackgroundColor3 = Theme.PanelHover
+			adjustValue(sign)
 
-	-- Simple solution for plugin widgets:
-	local dragCon
-	local upCon
+			task.delay(0.4, function()
+				while holding do
+					adjustValue(sign)
+					task.wait(0.1)
+				end
+			end)
+		end)
 
-	knob.MouseButton1Down:Connect(function()
-		dragging = true
-		knob.BackgroundColor3 = Theme.AccentHover
-	end)
+		btn.MouseButton1Up:Connect(function()
+			holding = false
+			btn.BackgroundColor3 = Theme.Panel
+		end)
 
-	inputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			dragging = false
-			knob.BackgroundColor3 = Theme.Text
-		end
-	end)
+		btn.MouseLeave:Connect(function()
+			holding = false
+			btn.BackgroundColor3 = Theme.Panel
+		end)
+	end
 
-	game:GetService("RunService").Heartbeat:Connect(function()
-		if dragging and container.Parent then -- check if valid
-			-- Standard Roblox UI Dragging logic:
-			local mPos = game:GetService("UserInputService"):GetMouseLocation()
-			-- This is screen space. Widget AbsolutePosition is also screen space.
-
-			local relativeX = mPos.X - sliderBg.AbsolutePosition.X
-			local pct = math.clamp(relativeX / sliderBg.AbsoluteSize.X, 0, 1)
-			local newVal = limits.min + (pct * (limits.max - limits.min))
-			setValue(newVal)
-		end
-	end)
-
-	-- Also allow clicking on bar to jump
-	local bgBtn = Instance.new("TextButton")
-	bgBtn.Size = UDim2.new(1,0,2,0)
-	bgBtn.Position = UDim2.new(0,0,-0.5,0)
-	bgBtn.BackgroundTransparency = 1
-	bgBtn.Text = ""
-	bgBtn.ZIndex = 0
-	bgBtn.Parent = sliderBg
-
-	bgBtn.MouseButton1Down:Connect(function()
-		dragging = true
-		knob.BackgroundColor3 = Theme.AccentHover
-		-- Immediate update
-		local mPos = game:GetService("UserInputService"):GetMouseLocation()
-		local relativeX = mPos.X - sliderBg.AbsolutePosition.X
-		local pct = math.clamp(relativeX / sliderBg.AbsoluteSize.X, 0, 1)
-		local newVal = limits.min + (pct * (limits.max - limits.min))
-		setValue(newVal)
-	end)
+	setupStepperButton(minusBtn, -1)
+	setupStepperButton(plusBtn, 1)
 
 	return inputBox, container
 end
