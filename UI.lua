@@ -435,8 +435,8 @@ function UI.init(plugin, pState, pConstants, pUtils)
 		Enum.InitialDockState.Float,
 		false, false, 300, 500, 250, 300
 	)
-	UI.widget = plugin:CreateDockWidgetPluginGui("BrushToolWidgetV1", widgetInfo)
-	UI.widget.Title = "Brush Tool"
+	UI.widget = plugin:CreateDockWidgetPluginGui("AssetFluxWidgetV1", widgetInfo)
+	UI.widget.Title = "AssetFlux"
 
 	UI.buildInterface()
 	UI.updateAllToggles()
@@ -473,7 +473,7 @@ function UI.buildInterface()
 	UI.C.activationBtn.Size = UDim2.new(1, -32, 0, 32)
 	UI.C.activationBtn.Position = UDim2.new(0, 16, 0.5, -16)
 	UI.C.activationBtn.BackgroundColor3 = Theme.Panel
-	UI.C.activationBtn.Text = "Activate Brush"
+	UI.C.activationBtn.Text = "Activate AssetFlux"
 	UI.C.activationBtn.Font = Theme.FontHeader
 	UI.C.activationBtn.TextSize = 14
 	UI.C.activationBtn.TextColor3 = Theme.Text
@@ -518,7 +518,7 @@ function UI.buildInterface()
 	ol.Parent = outputFrame
 
 	UI.C.outputModeBtn = {createStyledButton("Mode: Per Stroke", outputFrame)}
-	UI.C.outputFolderNameInput = {createStyledInput("Folder Name", "BrushOutput", outputFrame)}
+	UI.C.outputFolderNameInput = {createStyledInput("Folder Name", "AssetFlux_Output", outputFrame)}
 
 	-- Initial State
 	UI.C.outputFolderNameInput[2].Visible = false
@@ -541,7 +541,7 @@ function UI.buildInterface()
 
 	UI.C.outputFolderNameInput[1].FocusLost:Connect(function()
 		local txt = Utils.trim(UI.C.outputFolderNameInput[1].Text)
-		if txt == "" then txt = "BrushOutput" end
+		if txt == "" then txt = "AssetFlux_Output" end
 		State.Output.FixedFolderName = txt
 		UI.C.outputFolderNameInput[1].Text = txt
 	end)
@@ -796,7 +796,25 @@ function UI.buildInterface()
 	UI.C.assetSettingsBaseRotation = {createStyledInput("Base Rot (Y)", "0", asGrid)}
 	UI.C.assetSettingsBaseRotationX = {createStyledInput("Base Rot (X)", "0", asGrid)}
 
+	UI.C.assetSettingsPlacementMode = {createStyledButton("Mode: Bounding Box", UI.C.assetSettingsFrame)}
+	UI.C.assetSettingsPlacementMode[1].Size = UDim2.new(1, 0, 0, 32)
+
 	UI.C.assetSettingsActive = {createCheckbox("Active in Brush", UI.C.assetSettingsFrame)}
+
+	UI.C.assetSettingsPlacementMode[1].MouseButton1Click:Connect(function()
+		if State.selectedAssetInUI then
+			local key = State.selectedAssetInUI .. "_placementMode"
+			local current = State.assetOffsets[key] or "BoundingBox"
+			local nextMode = "BoundingBox"
+			if current == "BoundingBox" then nextMode = "PrimaryPart"
+			elseif current == "PrimaryPart" then nextMode = "Raycast"
+			else nextMode = "BoundingBox" end
+
+			State.assetOffsets[key] = nextMode
+			State.persistOffsets()
+			UI.C.assetSettingsPlacementMode[1].Text = "Mode: " .. nextMode
+		end
+	end)
 
 	UI.C.assetSettingsActive[1].MouseButton1Click:Connect(function()
 		if State.selectedAssetInUI then
@@ -922,9 +940,6 @@ function UI.buildInterface()
 	local envWrapper, envContent = createCollapsibleSection("Environment Control", TabTuning.frame, false, tuningLayoutOrder)
 	tuningLayoutOrder = tuningLayoutOrder + 1
 	local envOrder = 1
-
-	UI.C.smartSnapBtn = {createCheckbox("Smart Surface Snap", envContent)}
-	UI.C.smartSnapBtn[4].LayoutOrder = envOrder; envOrder = envOrder + 1
 
 	UI.C.snapToGridBtn = {createCheckbox("Snap to Grid", envContent)}
 	UI.C.snapToGridBtn[4].LayoutOrder = envOrder; envOrder = envOrder + 1
@@ -1179,11 +1194,6 @@ function UI.buildInterface()
 
 	-- Connect Tuning Toggles & Inputs (Moved to end to ensure elements exist)
 	-- Environment
-	UI.C.smartSnapBtn[1].MouseButton1Click:Connect(function()
-		State.smartSnapEnabled = not State.smartSnapEnabled
-		UI.updateAllToggles()
-	end)
-
 	UI.C.snapToGridBtn[1].MouseButton1Click:Connect(function()
 		State.snapToGridEnabled = not State.snapToGridEnabled
 		UI.updateAllToggles()
@@ -1286,12 +1296,12 @@ function UI.buildInterface()
 	-- HELP TAB
 	local helpFrame = TabHelp.frame
 
-	createSectionHeader("About Brush Tool V1", helpFrame)
+	createSectionHeader("About AssetFlux", helpFrame)
 	local aboutText = Instance.new("TextLabel")
 	aboutText.Size = UDim2.new(1, 0, 0, 0)
 	aboutText.AutomaticSize = Enum.AutomaticSize.Y
 	aboutText.BackgroundTransparency = 1
-	aboutText.Text = "Brush Tool V1 is a professional asset placement system designed for speed and precision. Place models, decals, and textures with advanced randomizers, smart surface snapping, and masking tools.\n\nVersion: 1.0.0 (Release)"
+	aboutText.Text = "AssetFlux is a professional asset placement system designed for fluid creativity. Place models, decals, and textures with advanced randomizers, smart surface snapping, and masking tools.\n\nVersion: 1.0.0 (Release)"
 	aboutText.Font = Theme.FontMain
 	aboutText.TextSize = 13
 	aboutText.TextColor3 = Theme.TextDim
@@ -1346,7 +1356,7 @@ function UI.buildInterface()
 
 	createSectionHeader("Tuning Guide", helpFrame)
 	addHelpItem("Transformation Randomizer", "Randomize Scale, Rotation, Color, and Transparency. Use 'Wobble' to add tilt variation.")
-	addHelpItem("Environment", "Control Ghost opacity/limits. 'Smart Surface Snap' aligns objects to terrain geometry.")
+	addHelpItem("Environment", "Control Ghost opacity/limits.")
 	addHelpItem("Surface Lock", "Force asset alignment to Floors, Walls, or Ceilings.")
 	addHelpItem("Filters", "Limit placement to specific Materials, Slope angles, or Height (Y-Level) ranges.")
 
@@ -1355,7 +1365,7 @@ function UI.buildInterface()
 	tipsText.Size = UDim2.new(1, 0, 0, 0)
 	tipsText.AutomaticSize = Enum.AutomaticSize.Y
 	tipsText.BackgroundTransparency = 1
-	tipsText.Text = "1. Use 'Smart Surface Snap' in Tuning tab to align complex models to irregular terrain.\n2. 'Slope Mask' prevents placement on steep cliffs.\n3. Save your favorite setups in the 'Presets' tab.\n4. Organize outputs using 'Grouped' mode in Output Settings."
+	tipsText.Text = "1. 'Slope Mask' prevents placement on steep cliffs.\n2. Save your favorite setups in the 'Presets' tab.\n3. Organize outputs using 'Grouped' mode in Output Settings."
 	tipsText.Font = Theme.FontMain
 	tipsText.TextSize = 13
 	tipsText.TextColor3 = Theme.TextDim
@@ -1407,7 +1417,7 @@ function UI.updateOnOffButtonUI()
 		UI.C.activationBtn.TextColor3 = Theme.Background
 		UI.C.activationBtn.BackgroundColor3 = Theme.Success
 	else
-		UI.C.activationBtn.Text = "Activate Brush"
+		UI.C.activationBtn.Text = "Activate AssetFlux"
 		UI.C.activationBtn.TextColor3 = Theme.Text
 		UI.C.activationBtn.BackgroundColor3 = Theme.Panel
 	end
@@ -1426,7 +1436,6 @@ function UI.updateAllToggles()
 	updateToggle(UI.C.assetSettingsAlign[1], UI.C.assetSettingsAlign[2], UI.C.assetSettingsAlign[3], State.alignToSurface)
 	updateToggle(UI.C.assetSettingsActive[1], UI.C.assetSettingsActive[2], UI.C.assetSettingsActive[3], activeState)
 
-	updateToggle(UI.C.smartSnapBtn[1], UI.C.smartSnapBtn[2], UI.C.smartSnapBtn[3], State.smartSnapEnabled)
 	updateToggle(UI.C.snapToGridBtn[1], UI.C.snapToGridBtn[2], UI.C.snapToGridBtn[3], State.snapToGridEnabled)
 
 	updateToggle(UI.C.materialFilterToggle[1], UI.C.materialFilterToggle[2], UI.C.materialFilterToggle[3], State.MaterialFilter.Enabled)
@@ -1701,11 +1710,16 @@ function UI.updateAssetUIList()
 			UI.C.assetSettingsBaseRotation[1].Text = tostring(State.assetOffsets[asset.Name.."_rotation"] or 0)
 			UI.C.assetSettingsBaseRotationX[1].Text = tostring(State.assetOffsets[asset.Name.."_rotationX"] or 0)
 
+			local pMode = State.assetOffsets[asset.Name .. "_placementMode"] or "BoundingBox"
+			UI.C.assetSettingsPlacementMode[1].Text = "Mode: " .. pMode
+
 			-- Toggle visibility based on asset type
 			local isSticker = asset:IsA("Decal") or asset:IsA("Texture")
 			UI.C.assetSettingsBaseScale[2].Visible = isSticker
 			UI.C.assetSettingsBaseRotation[2].Visible = isSticker
 			UI.C.assetSettingsBaseRotationX[2].Visible = isSticker
+			-- Hide Placement Mode for Stickers (always top face)
+			UI.C.assetSettingsPlacementMode[1].Visible = not isSticker
 
 			UI.updateAllToggles()
 			UI.updateAssetUIList() 
