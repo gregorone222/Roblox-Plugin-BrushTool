@@ -68,6 +68,8 @@ local function createStyledFrame(parent, size)
 	return f
 end
 
+local TweenService = game:GetService("TweenService")
+
 local function createStyledButton(text, parent)
 	local btn = Instance.new("TextButton")
 	btn.Size = UDim2.new(1, 0, 0, 32) -- Slightly taller for touch/modern feel
@@ -81,33 +83,37 @@ local function createStyledButton(text, parent)
 
 	addCorner(btn, 6)
 
+	local function tweenColor(targetColor)
+		TweenService:Create(btn, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = targetColor}):Play()
+	end
+
 	-- Modern hover animation logic
 	btn.MouseEnter:Connect(function()
 		if not btn.Active then return end
 		if btn:GetAttribute("IsSelected") then
-			btn.BackgroundColor3 = Theme.AccentHover
+			tweenColor(Theme.AccentHover)
 		else
-			btn.BackgroundColor3 = Theme.PanelHover
+			tweenColor(Theme.PanelHover)
 		end
 	end)
 	btn.MouseLeave:Connect(function()
 		if not btn.Active then return end
 		if btn:GetAttribute("IsSelected") then
-			btn.BackgroundColor3 = Theme.Accent
+			tweenColor(Theme.Accent)
 		else
-			btn.BackgroundColor3 = Theme.Panel
+			tweenColor(Theme.Panel)
 		end
 	end)
 	btn.MouseButton1Down:Connect(function()
 		if not btn.Active then return end
 		if not btn:GetAttribute("IsSelected") then
-			btn.BackgroundColor3 = Theme.Border -- Pressed state
+			tweenColor(Theme.Border)
 		end
 	end)
 	btn.MouseButton1Up:Connect(function()
 		if not btn.Active then return end
 		if not btn:GetAttribute("IsSelected") then
-			btn.BackgroundColor3 = Theme.PanelHover
+			tweenColor(Theme.PanelHover)
 		end
 	end)
 
@@ -517,6 +523,7 @@ local function createCollapsibleSection(text, parent, isOpen, layoutOrder)
 	content.AutomaticSize = Enum.AutomaticSize.Y
 	content.BackgroundTransparency = 1
 	content.Visible = isOpen
+	content.ClipsDescendants = true
 	content.Parent = container
 
 	local contentPad = Instance.new("UIPadding")
@@ -533,9 +540,34 @@ local function createCollapsibleSection(text, parent, isOpen, layoutOrder)
 
 	headerBtn.MouseButton1Click:Connect(function()
 		isOpen = not isOpen
-		content.Visible = isOpen
 		arrow.Text = isOpen and "▼" or "▶"
 		title.TextColor3 = isOpen and Theme.Accent or Theme.Text
+
+		if isOpen then
+			content.Visible = true
+			content.AutomaticSize = Enum.AutomaticSize.None
+			content.Size = UDim2.new(1, 0, 0, 0)
+			-- Pre-calculate target height
+			content.AutomaticSize = Enum.AutomaticSize.Y
+			task.wait() -- Wait for layout to calculate
+			local targetHeight = content.AbsoluteSize.Y
+			content.AutomaticSize = Enum.AutomaticSize.None
+			content.Size = UDim2.new(1, 0, 0, 0)
+
+			local tween = TweenService:Create(content, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, targetHeight)})
+			tween.Completed:Connect(function()
+				content.AutomaticSize = Enum.AutomaticSize.Y
+			end)
+			tween:Play()
+		else
+			content.AutomaticSize = Enum.AutomaticSize.None
+			local tween = TweenService:Create(content, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 0)})
+			tween.Completed:Connect(function()
+				content.Visible = false
+				content.AutomaticSize = Enum.AutomaticSize.Y -- Reset for next open
+			end)
+			tween:Play()
+		end
 	end)
 
 	return container, content
@@ -634,6 +666,7 @@ local function createOrderedRandomizerGroup(parent, toggleText, layoutOrder)
 	return {btn, inner, label, toggleContainer}, grid, randomizeBtn
 end
 
+
 function UI.init(plugin, pState, pConstants, pUtils)
 	State = pState
 	Constants = pConstants
@@ -689,6 +722,25 @@ function UI.buildInterface()
 	UI.C.activationBtn.AutoButtonColor = false
 	UI.C.activationBtn.Parent = topBar
 	addCorner(UI.C.activationBtn, 8)
+
+	-- Compact Toggle
+	UI.C.compactToggle = Instance.new("TextButton")
+	UI.C.compactToggle.Size = UDim2.new(0, 32, 0, 32)
+	UI.C.compactToggle.AnchorPoint = Vector2.new(1, 0.5)
+	UI.C.compactToggle.Position = UDim2.new(1, -16, 0.5, 0)
+	UI.C.compactToggle.BackgroundColor3 = Theme.Panel
+	UI.C.compactToggle.Text = "≡"
+	UI.C.compactToggle.Font = Theme.FontHeader
+	UI.C.compactToggle.TextSize = 18
+	UI.C.compactToggle.TextColor3 = Theme.Text
+	UI.C.compactToggle.AutoButtonColor = false
+	UI.C.compactToggle.Parent = topBar
+	addCorner(UI.C.compactToggle, 6)
+
+	UI.C.compactToggle.MouseButton1Click:Connect(function()
+		State.isCompactMode = not State.isCompactMode
+		UI.applyCompactMode()
+	end)
 
 	-- Tabs
 	local tabBar = Instance.new("Frame")
@@ -922,6 +974,29 @@ function UI.buildInterface()
 	UI.C.deleteGroupBtn[1].TextColor3 = Theme.Destructive
 
 	createSectionHeader("Asset Management", TabAssets.frame)
+
+	-- Search Bar
+	UI.C.searchBar = Instance.new("TextBox")
+	UI.C.searchBar.Size = UDim2.new(1, 0, 0, 32)
+	UI.C.searchBar.BackgroundColor3 = Theme.Panel
+	UI.C.searchBar.TextColor3 = Theme.Text
+	UI.C.searchBar.PlaceholderText = "Search Assets..."
+	UI.C.searchBar.PlaceholderColor3 = Theme.TextDim
+	UI.C.searchBar.Font = Theme.FontMain
+	UI.C.searchBar.TextSize = 14
+	UI.C.searchBar.TextXAlignment = Enum.TextXAlignment.Left
+	UI.C.searchBar.ClearTextOnFocus = false
+	UI.C.searchBar.Parent = TabAssets.frame
+	addCorner(UI.C.searchBar, 6)
+
+	local searchPad = Instance.new("UIPadding")
+	searchPad.PaddingLeft = UDim.new(0, 10)
+	searchPad.Parent = UI.C.searchBar
+
+	UI.C.searchBar:GetPropertyChangedSignal("Text"):Connect(function()
+		UI.updateAssetUIList()
+	end)
+
 	local assetActions = Instance.new("Frame")
 	assetActions.Size = UDim2.new(1, 0, 0, 32)
 	assetActions.BackgroundTransparency = 1
@@ -976,6 +1051,31 @@ function UI.buildInterface()
 	alGrid.CellSize = UDim2.new(0.48, 0, 0, 100)
 	alGrid.CellPadding = UDim2.new(0.03, 0, 0, 8)
 	alGrid.Parent = UI.C.assetListFrame
+
+	-- Adaptive Grid Logic
+	local function updateGridColumns()
+		local containerWidth = UI.C.assetListFrame.AbsoluteSize.X
+		local idealWidth = 120 -- Minimum width for an asset card
+		local padding = 8
+
+		-- Calculate how many columns fit
+		local cols = math.floor((containerWidth + padding) / (idealWidth + padding))
+		if cols < 2 then cols = 2 end -- Minimum 2 columns
+
+		-- Calculate new cell width scale
+		-- 1 / cols = scale per cell (ignoring padding for simplicity in Scale logic, usually we use Offset for padding)
+		-- Actually UIGridLayout with Scale CellSize is tricky if we want exact gaps.
+		-- Better: Set CellSize to {1/cols, -padding}, but let's stick to simple Scale for robustness or strict math.
+
+		local cellScale = (1 / cols) - 0.02 -- Slight buffer
+		alGrid.CellSize = UDim2.new(1 / cols, -((cols - 1) * 4), 0, 100) -- Approx
+		-- UIGridLayout is simpler if we let it handle Scale.
+		-- Let's try to just update CellSize based on column count.
+
+		alGrid.CellSize = UDim2.new(1/cols, -6, 0, 100)
+	end
+
+	UI.C.assetListFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateGridColumns)
 
 	UI.C.assetSettingsFrame = Instance.new("Frame")
 	UI.C.assetSettingsFrame.Size = UDim2.new(1, 0, 0, 0)
@@ -1636,6 +1736,44 @@ function UI.updateGroupUI()
 	UI.C.groupNameLabel[1].Text = "Group: " .. string.upper(State.currentAssetGroup)
 end
 
+function UI.applyCompactMode()
+	local isCompact = State.isCompactMode
+
+	-- Toggle Header Button Style
+	if isCompact then
+		UI.C.compactToggle.BackgroundColor3 = Theme.Accent
+		UI.C.compactToggle.TextColor3 = Theme.Background
+	else
+		UI.C.compactToggle.BackgroundColor3 = Theme.Panel
+		UI.C.compactToggle.TextColor3 = Theme.Text
+	end
+
+	-- Recursive function to find section headers and layouts
+	local function applyToContainer(container)
+		for _, child in ipairs(container:GetDescendants()) do
+			-- Toggle Section Headers
+			if child:IsA("TextLabel") and child.Font == Theme.FontHeader and child.Parent.Name ~= "TopBar" then
+				-- Identify section headers by font/size context, somewhat loose check but effective for this structure
+				if child.Size.Y.Offset == 28 then
+					child.Visible = not isCompact
+				end
+			end
+
+			-- Adjust Layout Spacing
+			if child:IsA("UIListLayout") then
+				child.Padding = isCompact and UDim.new(0, 2) or UDim.new(0, 8)
+			elseif child:IsA("UIGridLayout") then
+				child.CellPadding = isCompact and UDim2.new(0, 2, 0, 2) or UDim2.new(0.04, 0, 0, 8)
+			end
+		end
+	end
+
+	-- Apply to main tab frames
+	for _, tab in pairs(UI.allTabs) do
+		applyToContainer(tab.Frame)
+	end
+end
+
 function UI.updateAllToggles()
 	local activeState = false
 	if State.selectedAssetInUI then
@@ -1796,10 +1934,15 @@ function UI.updateAssetUIList()
 	end)
 
 	for _, asset in ipairs(children) do
-		local isActive = State.assetOffsets[asset.Name .. "_active"]
-		if isActive == nil then isActive = true end
+		-- Search Filter
+		local searchText = ""
+		if UI.C.searchBar then searchText = Utils.trim(UI.C.searchBar.Text) end
 
-		local btn = Instance.new("TextButton")
+		if searchText == "" or string.find(string.lower(asset.Name), string.lower(searchText), 1, true) then
+			local isActive = State.assetOffsets[asset.Name .. "_active"]
+			if isActive == nil then isActive = true end
+
+			local btn = Instance.new("TextButton")
 		btn.BackgroundColor3 = isActive and Theme.Panel or Color3.fromRGB(30,30,30)
 		btn.Text = ""
 		btn.Parent = UI.C.assetListFrame
@@ -1935,6 +2078,7 @@ function UI.updateAssetUIList()
 		end)
 
 		if State.selectedAssetInUI == asset.Name then stroke.Color = Theme.Accent; stroke.Thickness = 2 end
+		end -- End Search Filter
 	end
 end
 
