@@ -547,12 +547,8 @@ local function createCollapsibleSection(text, parent, isOpen, layoutOrder)
 			content.Visible = true
 			content.AutomaticSize = Enum.AutomaticSize.None
 			content.Size = UDim2.new(1, 0, 0, 0)
-			-- Pre-calculate target height
-			content.AutomaticSize = Enum.AutomaticSize.Y
-			task.wait() -- Wait for layout to calculate
-			local targetHeight = content.AbsoluteSize.Y
-			content.AutomaticSize = Enum.AutomaticSize.None
-			content.Size = UDim2.new(1, 0, 0, 0)
+
+			local targetHeight = contentLayout.AbsoluteContentSize.Y + contentPad.PaddingTop.Offset + contentPad.PaddingBottom.Offset
 
 			local tween = TweenService:Create(content, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, targetHeight)})
 			tween.Completed:Connect(function()
@@ -561,10 +557,10 @@ local function createCollapsibleSection(text, parent, isOpen, layoutOrder)
 			tween:Play()
 		else
 			content.AutomaticSize = Enum.AutomaticSize.None
+			content.Size = UDim2.new(1, 0, 0, content.AbsoluteSize.Y)
 			local tween = TweenService:Create(content, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 0, 0)})
 			tween.Completed:Connect(function()
 				content.Visible = false
-				content.AutomaticSize = Enum.AutomaticSize.Y -- Reset for next open
 			end)
 			tween:Play()
 		end
@@ -722,25 +718,6 @@ function UI.buildInterface()
 	UI.C.activationBtn.AutoButtonColor = false
 	UI.C.activationBtn.Parent = topBar
 	addCorner(UI.C.activationBtn, 8)
-
-	-- Compact Toggle
-	UI.C.compactToggle = Instance.new("TextButton")
-	UI.C.compactToggle.Size = UDim2.new(0, 32, 0, 32)
-	UI.C.compactToggle.AnchorPoint = Vector2.new(1, 0.5)
-	UI.C.compactToggle.Position = UDim2.new(1, -16, 0.5, 0)
-	UI.C.compactToggle.BackgroundColor3 = Theme.Panel
-	UI.C.compactToggle.Text = "≡"
-	UI.C.compactToggle.Font = Theme.FontHeader
-	UI.C.compactToggle.TextSize = 18
-	UI.C.compactToggle.TextColor3 = Theme.Text
-	UI.C.compactToggle.AutoButtonColor = false
-	UI.C.compactToggle.Parent = topBar
-	addCorner(UI.C.compactToggle, 6)
-
-	UI.C.compactToggle.MouseButton1Click:Connect(function()
-		State.isCompactMode = not State.isCompactMode
-		UI.applyCompactMode()
-	end)
 
 	-- Tabs
 	local tabBar = Instance.new("Frame")
@@ -1349,6 +1326,8 @@ function UI.buildInterface()
 	local matListScroll = Instance.new("ScrollingFrame")
 	matListScroll.Size = UDim2.new(1, 0, 1, -28)
 	matListScroll.Position = UDim2.new(0, 0, 0, 28)
+	matListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	matListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	matListScroll.BackgroundTransparency = 1
 	matListScroll.BackgroundColor3 = Theme.Panel -- Slight bg for list
 	matListScroll.BackgroundTransparency = 0.8
@@ -1655,26 +1634,29 @@ function UI.buildInterface()
 		pad.Parent = container
 	end
 
-	addHelpItem("Paint", "Click and drag to scatter assets within the radius. Adjust Density for more assets per stroke.")
-	addHelpItem("Line", "Click start point, then click end point to place a row of assets. Uses 'Spacing' parameter.")
-	addHelpItem("Path", "Click multiple points to draw a curve. Press 'Generate' to place assets along it. Use Undo/Redo to fix points.")
-	addHelpItem("Volume", "Fills a spherical area in 3D space. Useful for floating debris or clouds.")
-	addHelpItem("Fill", "Select a Part, then click 'Fill' to populate its volume with assets.")
-	addHelpItem("Stamp", "Places a single asset at a time with precision.")
-	addHelpItem("Erase / Replace", "Remove or Swap assets within the brush radius. Use 'Filter' to target specific groups.")
+	addHelpItem("Paint", "Scatter assets in radius. Cursor turns RED if placement is invalid (Slope/Material/Height).")
+	addHelpItem("Line & Path", "Place rows or curves. Path supports Undo/Redo. Use 'Spacing' to adjust density.")
+	addHelpItem("Volume & Fill", "Fill 3D spheres or target Parts with assets. Ideal for debris or vegetation.")
+	addHelpItem("Stamp", "Precision single-asset placement.")
+	addHelpItem("Erase & Replace", "Modify existing assets. Use 'Filter' to limit to All, Current Group, or Active Only.")
 
-	createSectionHeader("Tuning Guide", helpFrame)
-	addHelpItem("Transformation Randomizer", "Randomize Scale, Rotation, Color, and Transparency. Use 'Wobble' to add tilt variation.")
-	addHelpItem("Environment", "Control Ghost opacity/limits.")
-	addHelpItem("Surface Lock", "Force asset alignment to Floors, Walls, or Ceilings.")
-	addHelpItem("Filters", "Limit placement to specific Materials, Slope angles, or Height (Y-Level) ranges.")
+	createSectionHeader("Asset Management", helpFrame)
+	addHelpItem("Asset Settings", "Click an asset to edit. Use 'Placement Mode' (BoundingBox/Raycast) to fix floating trees.")
+	addHelpItem("Favorites", "Star (★) assets to keep them at the top of the list.")
+	addHelpItem("Output Modes", "Per Stroke (Grouped by action), Fixed Folder (All in one), or Grouped (By asset name).")
+
+	createSectionHeader("Tuning & Environment", helpFrame)
+	addHelpItem("Surface Lock", "Align to Floor, Wall, or Ceiling. Red cursor indicates wrong surface.")
+	addHelpItem("Filters", "Restrict placement by Surface Material, Slope Angle, or Y-Height.")
+	addHelpItem("Randomizers", "Vary Scale, Rotation, Color (HSV), and Transparency. 'Wobble' adds random tilt.")
+	addHelpItem("Environment", "Enable 'Snap to Grid' for architectural work. Adjust Ghost opacity for visibility.")
 
 	createSectionHeader("Pro Tips", helpFrame)
 	local tipsText = Instance.new("TextLabel")
 	tipsText.Size = UDim2.new(1, 0, 0, 0)
 	tipsText.AutomaticSize = Enum.AutomaticSize.Y
 	tipsText.BackgroundTransparency = 1
-	tipsText.Text = "1. 'Slope Mask' prevents placement on steep cliffs.\n2. Save your favorite setups in the 'Presets' tab.\n3. Organize outputs using 'Grouped' mode in Output Settings."
+	tipsText.Text = "1. Use 'Raycast' placement mode for assets with irregular bottoms.\n2. 'Smart Cursor' prevents painting on cliffs if Slope Mask is active.\n3. Save complex brush setups in the 'Presets' tab."
 	tipsText.Font = Theme.FontMain
 	tipsText.TextSize = 13
 	tipsText.TextColor3 = Theme.TextDim

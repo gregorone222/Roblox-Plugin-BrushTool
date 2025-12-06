@@ -30,7 +30,6 @@ State.currentAssetGroup = "Default"
 State.isGroupListView = false
 State.ghostTransparency = 0.65
 State.alignToSurface = false
-State.isCompactMode = false
 
 -- Material Filter State
 State.MaterialFilter = {
