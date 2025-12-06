@@ -1165,6 +1165,8 @@ function UI.buildInterface()
 	pcl.Parent = presetCreationFrame
 
 	UI.C.presetNameInput = {createStyledInput("Preset Name", "", presetCreationFrame)}
+	UI.C.presetNameInput[1].PlaceholderText = "Enter Preset Name..."
+	UI.C.presetNameInput[1].PlaceholderColor3 = Theme.TextDim
 	UI.C.savePresetBtn = {createStyledButton("Save New Preset", presetCreationFrame)}
 	UI.C.savePresetBtn[1].TextColor3 = Theme.Success
 
