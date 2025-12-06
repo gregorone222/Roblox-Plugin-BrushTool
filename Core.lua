@@ -76,6 +76,21 @@ function Core.isHeightAllowed(position)
 	return position.Y >= State.HeightFilter.MinHeight and position.Y <= State.HeightFilter.MaxHeight
 end
 
+function Core.isSurfaceAngleAllowed(normal)
+	if State.surfaceAngleMode == "Floor" and normal.Y < 0.7 then return false end
+	if State.surfaceAngleMode == "Wall" and math.abs(normal.Y) > 0.3 then return false end
+	if State.surfaceAngleMode == "Ceiling" and normal.Y > -0.7 then return false end
+	return true
+end
+
+function Core.isValidLocation(position, normal, material)
+	if not Core.isMaterialAllowed(material) then return false end
+	if not Core.isSlopeAllowed(normal) then return false end
+	if not Core.isHeightAllowed(position) then return false end
+	if not Core.isSurfaceAngleAllowed(normal) then return false end
+	return true
+end
+
 local function getRandomWeightedAsset(assetList)
 	local totalWeight = 0
 	for _, asset in ipairs(assetList) do
@@ -397,9 +412,6 @@ function Core.findSurfacePositionAndNormal()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * 2000, params)
 	if result then
-		if State.surfaceAngleMode == "Floor" and result.Normal.Y < 0.7 then return nil, nil, nil
-		elseif State.surfaceAngleMode == "Wall" and math.abs(result.Normal.Y) > 0.3 then return nil, nil, nil
-		elseif State.surfaceAngleMode == "Ceiling" and result.Normal.Y > -0.7 then return nil, nil, nil end
 		return result.Position, result.Normal, result.Instance, result.Material
 	end
 	return nil, nil, nil, nil
@@ -723,18 +735,28 @@ function Core.updatePreview()
 
 	elseif State.currentMode == "Paint" or State.currentMode == "Stamp" or State.currentMode == "Fill" or State.currentMode == "Erase" or State.currentMode == "Replace" then
 		local radius = math.max(0.1, Utils.parseNumber(UI.C.radiusBox[1].Text, 10))
-		local surfacePos, normal = Core.findSurfacePositionAndNormal()
+		local surfacePos, normal, instance, material = Core.findSurfacePositionAndNormal()
 
 		if surfacePos and normal then
+			local isValid = true
+			if State.currentMode == "Paint" or State.currentMode == "Stamp" then
+				isValid = Core.isValidLocation(surfacePos, normal, material)
+			end
+
 			if State.currentMode == "Stamp" then
 				State.previewPart.Parent = nil
 			else
 				State.previewPart.Parent = State.previewFolder
 				State.previewPart.Shape = Enum.PartType.Cylinder
 				State.previewPart.Size = Vector3.new(0.02, radius*2, radius*2)
-				State.previewPart.Color = Color3.fromRGB(80, 255, 80)
-				if State.currentMode == "Replace" then State.previewPart.Color = Color3.fromRGB(80, 180, 255)
-				elseif State.currentMode == "Erase" then State.previewPart.Color = Color3.fromRGB(255, 80, 80) end
+
+				if not isValid then
+					State.previewPart.Color = Constants.Theme.Destructive
+				else
+					State.previewPart.Color = Color3.fromRGB(80, 255, 80)
+					if State.currentMode == "Replace" then State.previewPart.Color = Color3.fromRGB(80, 180, 255)
+					elseif State.currentMode == "Erase" then State.previewPart.Color = Color3.fromRGB(255, 80, 80) end
+				end
 			end
 
 			local pos = surfacePos
@@ -744,7 +766,7 @@ function Core.updatePreview()
 			local lookActual = normal:Cross(right).Unit
 			State.previewPart.CFrame = CFrame.fromMatrix(pos + normal * 0.05, normal, right, lookActual)
 
-			if showGhost and not State.isPainting then
+			if showGhost and not State.isPainting and isValid then
 				local targetGroup = State.assetsFolder:FindFirstChild(State.currentAssetGroup)
 				if targetGroup then
 					local activeAssets = {}
@@ -754,8 +776,8 @@ function Core.updatePreview()
 					State.pendingBatch = Core.calculateBatch(surfacePos, normal, activeAssets)
 					Core.updateBatchGhosts(State.pendingBatch)
 				end
-			elseif not showGhost then
-				-- Hide ghosts if in Erase/Replace
+			else
+				-- Hide ghosts if in Erase/Replace or Invalid location
 				Core.updateBatchGhosts({})
 			end
 		else
@@ -1277,7 +1299,10 @@ local function onMove()
 		if result and State.lastPaintPosition then
 			local spacing = math.max(0.1, Utils.parseNumber(UI.C.spacingBox[1].Text, 1.0))
 			if (result.Position - State.lastPaintPosition).Magnitude >= spacing then
-				if State.currentMode == "Paint" then Core.paintAt(result.Position, result.Normal)
+				if State.currentMode == "Paint" then
+					if Core.isValidLocation(result.Position, result.Normal, result.Material) then
+						Core.paintAt(result.Position, result.Normal)
+					end
 				elseif State.currentMode == "Erase" then Core.eraseAt(result.Position)
 				elseif State.currentMode == "Replace" then Core.replaceAt(result.Position)
 				end
@@ -1298,7 +1323,7 @@ local function onDown()
 		return
 	end
 
-	local center, normal, _ = Core.findSurfacePositionAndNormal()
+	local center, normal, _, material = Core.findSurfacePositionAndNormal()
 	if not center then return end
 
 	if State.currentMode == "Line" then
@@ -1326,15 +1351,22 @@ local function onDown()
 
 		Core.updatePathPreview()
 	elseif State.currentMode == "Paint" or State.currentMode == "Stamp" or State.currentMode == "Erase" or State.currentMode == "Replace" then
-		if State.currentMode == "Paint" then Core.paintAt(center, normal)
-		elseif State.currentMode == "Stamp" then Core.stampAt(center, normal)
-		elseif State.currentMode == "Erase" then Core.eraseAt(center)
-		elseif State.currentMode == "Replace" then Core.replaceAt(center)
+		local proceed = true
+		if State.currentMode == "Paint" or State.currentMode == "Stamp" then
+			if not Core.isValidLocation(center, normal, material) then proceed = false end
 		end
 
-		if State.currentMode ~= "Stamp" then
-			State.isPainting = true
-			State.lastPaintPosition = center
+		if proceed then
+			if State.currentMode == "Paint" then Core.paintAt(center, normal)
+			elseif State.currentMode == "Stamp" then Core.stampAt(center, normal)
+			elseif State.currentMode == "Erase" then Core.eraseAt(center)
+			elseif State.currentMode == "Replace" then Core.replaceAt(center)
+			end
+
+			if State.currentMode ~= "Stamp" then
+				State.isPainting = true
+				State.lastPaintPosition = center
+			end
 		end
 	end
 end
