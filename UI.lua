@@ -1165,8 +1165,33 @@ function UI.buildInterface()
 	pcl.Parent = presetCreationFrame
 
 	UI.C.presetNameInput = {createStyledInput("Preset Name", "", presetCreationFrame)}
-	UI.C.savePresetBtn = {createStyledButton("Save Current Config", presetCreationFrame)}
+	UI.C.savePresetBtn = {createStyledButton("Save New Preset", presetCreationFrame)}
 	UI.C.savePresetBtn[1].TextColor3 = Theme.Success
+
+	UI.C.presetNameInput[1]:GetPropertyChangedSignal("Text"):Connect(function()
+		local name = Utils.trim(UI.C.presetNameInput[1].Text)
+		if name == "" then
+			UI.C.savePresetBtn[1].Text = "Enter Name"
+			UI.C.savePresetBtn[1].BackgroundColor3 = Theme.Panel
+			UI.C.savePresetBtn[1].TextColor3 = Theme.TextDim
+			UI.C.savePresetBtn[1].AutoButtonColor = false
+		elseif State.presets[name] then
+			UI.C.savePresetBtn[1].Text = "Overwrite '" .. name .. "'"
+			UI.C.savePresetBtn[1].BackgroundColor3 = Theme.Panel
+			UI.C.savePresetBtn[1].TextColor3 = Theme.Warning
+			UI.C.savePresetBtn[1].AutoButtonColor = true
+		else
+			UI.C.savePresetBtn[1].Text = "Save New Preset"
+			UI.C.savePresetBtn[1].BackgroundColor3 = Theme.Panel
+			UI.C.savePresetBtn[1].TextColor3 = Theme.Success
+			UI.C.savePresetBtn[1].AutoButtonColor = true
+		end
+	end)
+
+	-- Init initial state
+	UI.C.savePresetBtn[1].Text = "Enter Name"
+	UI.C.savePresetBtn[1].TextColor3 = Theme.TextDim
+	UI.C.savePresetBtn[1].AutoButtonColor = false
 
 	createSectionHeader("Saved Profiles", TabPresets.frame)
 	UI.C.presetListFrame = Instance.new("Frame")
